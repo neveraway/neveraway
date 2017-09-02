@@ -1,0 +1,18 @@
+﻿<?xml version='1.0' encoding='utf-8'?>
+<SettingsFile xmlns="http://schemas.microsoft.com/VisualStudio/2004/01/settings" CurrentProfile="(Default)" GeneratedClassNamespace="NeverAway.Properties" GeneratedClassName="Settings">
+  <Profiles />
+  <Settings>
+    <Setting Name="ShowBalloonTipTimeout" Type="System.Int32" Scope="Application">
+      <Value Profile="(Default)">500</Value>
+    </Setting>
+    <Setting Name="KeyToPress" Type="System.String" Scope="Application">
+      <Value Profile="(Default)">F24</Value>
+    </Setting>
+    <Setting Name="TimeToWaitBetweenKeyPressesInMS" Type="System.Int32" Scope="Application">
+      <Value Profile="(Default)">240000</Value>
+    </Setting>
+    <Setting Name="TimesToPressKey" Type="System.Int32" Scope="Application">
+      <Value Profile="(Default)">1</Value>
+    </Setting>
+  </Settings>
+</SettingsFile>
