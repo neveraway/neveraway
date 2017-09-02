@@ -16,6 +16,7 @@ namespace NeverAway
         private Icon NormalAwayIcon;
         private Icon NeverAwayIcon;
         private bool _NeverAway;
+        private bool _ShowMessages;
         private BackgroundWorker bw;
         private int ThreadSleep;
         private int ShowBalloonTipTimeout;
@@ -35,6 +36,7 @@ namespace NeverAway
                 NormalAwayIcon = new Icon(SystemIcons.Shield, 40, 40);
                 NeverAwayIcon = new Icon(SystemIcons.Hand, 40, 40);
                 _NeverAway = false;
+                _ShowMessages = false;
                 bw = null;
 
                 ThreadSleep = s.Default.TimeToWaitBetweenKeyPressesInMS;
@@ -57,7 +59,9 @@ namespace NeverAway
             //create the tray menu
             trayMenu = new ContextMenu();
             trayMenu.MenuItems.Add(Strings.trayMenuNeverAway, OnAway);
+            trayMenu.MenuItems.Add(Strings.trayMenuShowStatusMessagesText, OnShowMessages);
             trayMenu.MenuItems.Add(Strings.trayMenuExit, OnExit);
+            
 
             //add menu to tray icon and show it.
             trayIcon = new NotifyIcon();
@@ -112,10 +116,18 @@ namespace NeverAway
 
         }
 
+        private void OnShowMessages(object sender, EventArgs e)
+        {
+
+            _ShowMessages = !_ShowMessages;
+            UpdateTrayStatus();
+        }
+
         private void UpdateTrayStatus()
         {
             trayIcon.Text = _NeverAway ? Strings.neverAwayText : Strings.normalAwayText;
             trayIcon.ContextMenu.MenuItems[0].Checked = _NeverAway;
+            trayIcon.ContextMenu.MenuItems[1].Checked = _ShowMessages;
             trayIcon.Icon = _NeverAway ? NeverAwayIcon : NormalAwayIcon;
         }
 
@@ -148,7 +160,10 @@ namespace NeverAway
                         UpdateTrayStatus();
                         bw.CancelAsync();//probably a better place to put this, but it seems to work ok.
                     }
-                    trayIcon.ShowBalloonTip(ShowBalloonTipTimeout, Strings.tipTitle, statusmessage, ToolTipIcon.Info);
+                    if (_ShowMessages) //only show the popup messages if we are supposed to.
+                    {
+                        trayIcon.ShowBalloonTip(ShowBalloonTipTimeout, Strings.tipTitle, statusmessage, ToolTipIcon.Info);
+                    }
                     System.Threading.Thread.Sleep(ThreadSleep);
                 }
             }

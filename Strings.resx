@@ -141,4 +141,7 @@
   <data name="trayMenuNeverAway" xml:space="preserve">
     <value>Never Away?</value>
   </data>
+  <data name="trayMenuShowStatusMessagesText" xml:space="preserve">
+    <value>Show Status Messages?</value>
+  </data>
 </root>
