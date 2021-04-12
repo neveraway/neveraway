@@ -1,186 +1,105 @@
-﻿using System;
-using System.Drawing;
+using System;
 using System.Windows.Forms;
+using System.Drawing;
 using System.Threading;
-using WindowsInput;
-using System.Linq;
-using System.ComponentModel;
-using s = NeverAway.Properties.Settings;
+using System.Threading.Tasks;
+using System.Runtime.InteropServices;
 
-namespace NeverAway
+
+
+namespace neveraway
 {
-    public class NeverAwayApp : Form
+    class neverawayApp : Form
     {
         private NotifyIcon trayIcon;
-        private ContextMenu trayMenu;
-        private Icon NormalAwayIcon;
-        private Icon NeverAwayIcon;
-        private bool _NeverAway;
-        private bool _ShowMessages;
-        private BackgroundWorker bw;
-        private int ThreadSleep;
-        private int ShowBalloonTipTimeout;
-        private int TimesToPressKey;
-        private string KeyToPress;
+        private bool isActive = false;
+        private Icon activeIcon = new Icon(SystemIcons.Error, 40, 40);
+        private Icon inactiveIcon = new Icon(SystemIcons.Shield, 40, 40);
+        private CancellationTokenSource source;
+        // [DllImport("user32.dll")]
+        // private static extern int SetKeyboardState(byte[] keyState);
 
-        [STAThread]
-        public static void Main()
-        {
-            Application.Run(new NeverAwayApp());
-        }
+        // private const Byte[]
 
-        public NeverAwayApp()
-        {
-            try
-            {
-                NormalAwayIcon = new Icon(SystemIcons.Shield, 40, 40);
-                NeverAwayIcon = new Icon(SystemIcons.Hand, 40, 40);
-                _NeverAway = false;
-                _ShowMessages = false;
-                bw = null;
-
-                ThreadSleep = s.Default.TimeToWaitBetweenKeyPressesInMS;
-                ShowBalloonTipTimeout = s.Default.ShowBalloonTipTimeout;
-                TimesToPressKey = s.Default.TimesToPressKey;
-                KeyToPress = s.Default.KeyToPress;
-
-                //Build the tray menu
-                InitializeTrayMenu();
-            }
-            catch (Exception ex)
-            {
-                this.Dispose();
-                MessageBox.Show(Strings.InitializationError);
-                throw (ex);
-            }
-        }
-        private void InitializeTrayMenu()
-        {
-            //create the tray menu
-            trayMenu = new ContextMenu();
-            trayMenu.MenuItems.Add(Strings.trayMenuNeverAway, OnAway);
-            trayMenu.MenuItems.Add(Strings.trayMenuShowStatusMessagesText, OnShowMessages);
-            trayMenu.MenuItems.Add(Strings.trayMenuExit, OnExit);
-            
-
-            //add menu to tray icon and show it.
-            trayIcon = new NotifyIcon();
-            trayIcon.ContextMenu = trayMenu;
-            trayIcon.Visible = true;
-
-            //Set the normal away messages and icons
-            UpdateTrayStatus();
-        }
-
-        private void InitializeBackgroundWorker()
-        {
-            bw = new BackgroundWorker();
-            bw.WorkerSupportsCancellation = true;
-            bw.DoWork += new DoWorkEventHandler(bw_DoWork);
-        }
-
-        private void CleanupBackgroundWorker()
-        {
-            if (bw != null)
-            {
-                bw.CancelAsync();
-                bw.Dispose();
-                bw = null;
-            }
-        }
         protected override void OnLoad(EventArgs e)
         {
-            Visible       = false; // Hide form window.
+            Visible = false; // Hide form window.
             ShowInTaskbar = false; // Remove from taskbar.
+            Opacity = 0;     // See through, just in case.
             base.OnLoad(e);
         }
 
+        [STAThread]
+        static void Main()
+        {
+            Application.Run(new neverawayApp());
+        }
+
+        public neverawayApp()
+        {
+            trayIcon = new System.Windows.Forms.NotifyIcon();
+            trayIcon.Icon = activeIcon;
+            trayIcon.Visible = true;
+            trayIcon.DoubleClick += (s, e) => OnClick(s, e);
+            trayIcon.ContextMenuStrip = new System.Windows.Forms.ContextMenuStrip();
+            trayIcon.ContextMenuStrip.Items.Add("Never Away?").Click += (s, e) => OnClick(s, e);
+            trayIcon.ContextMenuStrip.Items.Add($"Exit").Click += (s, e) => OnExit(s, e);
+            ToggleStatus();
+            MaintainStatus();
+        }
+        private void OnClick(object sender, EventArgs e)
+        {
+            ToggleStatus();
+        }
         private void OnExit(object sender, EventArgs e)
         {
+            source?.Cancel();
+            isActive = false;
             trayIcon.Visible = false;
             Application.Exit();
         }
-
-        private void OnAway(object sender, EventArgs e)
+        private void ToggleStatus()
         {
-
-            _NeverAway = !_NeverAway;
-            UpdateTrayStatus();
-
-            CleanupBackgroundWorker();
-            if (_NeverAway)
+            ((ToolStripMenuItem)trayIcon.ContextMenuStrip.Items[0]).Checked = isActive = !isActive;
+            trayIcon.Icon = isActive ? activeIcon : inactiveIcon;
+            trayIcon.Text = isActive ? "NeverAway is on." : "NeverAway is off.";
+            if (isActive)
             {
-                InitializeBackgroundWorker();
-                bw.RunWorkerAsync();
+                MaintainStatus();
             }
-
-        }
-
-        private void OnShowMessages(object sender, EventArgs e)
-        {
-
-            _ShowMessages = !_ShowMessages;
-            UpdateTrayStatus();
-        }
-
-        private void UpdateTrayStatus()
-        {
-            trayIcon.Text = _NeverAway ? Strings.neverAwayText : Strings.normalAwayText;
-            trayIcon.ContextMenu.MenuItems[0].Checked = _NeverAway;
-            trayIcon.ContextMenu.MenuItems[1].Checked = _ShowMessages;
-            trayIcon.Icon = _NeverAway ? NeverAwayIcon : NormalAwayIcon;
-        }
-
-        private void bw_DoWork(object sender, DoWorkEventArgs e)
-        {
-            int i = 0;
-            while (true)
+            else
             {
-                if ((((BackgroundWorker)sender).CancellationPending))
+                source?.Cancel();
+            }
+        }
+        public async Task MaintainStatus()
+        {
+            source = new CancellationTokenSource();
+            while (isActive)
+            {
+                Keyboard.KeyUp((byte)Keys.F24);
+                await Task.Delay(10 * 1000);
+                if (source.Token.IsCancellationRequested)
                 {
-                    e.Cancel = true;
                     break;
                 }
-                else
-                {
-                    i++;
-                    string statusmessage;
-                    try
-                    {
-                        statusmessage = String.Format(Strings.statusMessage, DateTime.Now.ToLocalTime().ToString(), KeyToPress, i.ToString());
-                        for (int c = 0; c < TimesToPressKey; c++)
-                            InputSimulator.SimulateKeyPress(
-                                (VirtualKeyCode)System.Enum.Parse(typeof(VirtualKeyCode), KeyToPress)
-                                );
-                    }
-                    catch (Exception Ex)
-                    {
-                        statusmessage = String.Format(Strings.errorMessage, DateTime.Now.ToLocalTime().ToString(), Ex.Message, Ex.StackTrace);
-                        _NeverAway = false;
-                        UpdateTrayStatus();
-                        bw.CancelAsync();//probably a better place to put this, but it seems to work ok.
-                    }
-                    if (_ShowMessages) //only show the popup messages if we are supposed to.
-                    {
-                        trayIcon.ShowBalloonTip(ShowBalloonTipTimeout, Strings.tipTitle, statusmessage, ToolTipIcon.Info);
-                    }
-                    System.Threading.Thread.Sleep(ThreadSleep);
-                }
             }
+            source.Dispose();
         }
-       
-        protected override void Dispose(bool isDisposing)
-        {
-            if (isDisposing)
-            {
-                // Dispose of our other resources
-                NormalAwayIcon.Dispose();
-                NeverAwayIcon.Dispose();
-                trayIcon.Dispose();
-                CleanupBackgroundWorker();
-            }
 
-            base.Dispose(isDisposing);
-        }
     }
+    //ref https://stackoverflow.com/questions/16342599/c-sharp-hold-key-in-a-game-application
+    public class Keyboard
+    {
+        [DllImport("user32.dll", SetLastError = true)]
+        static extern void keybd_event(byte bVk, byte bScan, int dwFlags, int dwExtraInfo);
+        const int KEY_UP_EVENT = 0x0002; //Key up flag
+
+        public static void KeyUp(byte key)
+        {
+            keybd_event(key, 0, KEY_UP_EVENT, 0);
+        }
+
+    }
+
 }
