@@ -4,6 +4,8 @@
 
 Neveraway is a small utility that will prevent your computer from showing as away in Teams or other chat tools.
 
+[![Donate](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=9VZCPAU2VZYTJ)
+
 ## How does it work?
 
 As of v2.0, it executes the KeyUp event on F24 key every 10 seconds.
