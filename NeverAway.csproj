@@ -3,7 +3,7 @@
   <PropertyGroup>
     <!-- Basics -->
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net5.0-windows</TargetFramework>
+    <TargetFramework>net8.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <!-- Product Info -->
     <ProductName>NeverAway</ProductName>
@@ -13,7 +13,7 @@
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <PublishTrimmed>true</PublishTrimmed>
+    <PublishTrimmed>false</PublishTrimmed>
     <PublishReadyToRun>true</PublishReadyToRun>
     <DebugType>embedded</DebugType>
   </PropertyGroup>
