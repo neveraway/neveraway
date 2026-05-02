@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Pure-library: interfaces + per-platform input simulators +       -->
+    <!-- factory. No Main, no UI. The two consuming projects are:         -->
+    <!--   NeverAway.Console — cross-platform console runner              -->
+    <!--   NeverAway.Windows — Windows tray UI                            -->
+    <!-- Both reference this, both call InputSimulator.ForCurrentOs().    -->
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>NeverAway.Core</RootNamespace>
+  </PropertyGroup>
+
+</Project>

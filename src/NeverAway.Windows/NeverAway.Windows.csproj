@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- net10-windows for WinForms tray. References NeverAway.Core for   -->
+    <!-- the IInputSimulator + WindowsInputSimulator (the Core picks the  -->
+    <!-- platform via factory).                                           -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <OutputType>WinExe</OutputType>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>NeverAway.Windows</RootNamespace>
+    <AssemblyName>neveraway</AssemblyName>
+    <ProductName>NeverAway</ProductName>
+    <PublisherName>Roy Ashbrook</PublisherName>
+    <ApplicationVersion>3.0.0.0</ApplicationVersion>
+    <!-- Single-file publish for the Windows tray binary (preserves       -->
+    <!-- the v2 install model: download .exe, double-click, runs in tray) -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NeverAway.Core\NeverAway.Core.csproj" />
+  </ItemGroup>
+
+</Project>

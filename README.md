@@ -14,6 +14,59 @@ Very old (pre-codeplex) versions used a testing automation tool to simulate key 
 
 I wrote a small wrapper class called [KeyboardWrapper](https://github.com/royashbrook/KeyboardWrapper) but this project just uses the user32.dll call directly since I only need that one call. I did publish a nuget package for [KeyboardWrapper](https://github.com/royashbrook/KeyboardWrapper) in case anyone finds it useful. =)
 
+## v3 — cross-platform
+
+v3 keeps the Windows tray UX exactly as before (download `neveraway.exe`, double-click, runs in tray) and adds **macOS + Linux** support via a small console runner. Three projects:
+
+- `src/NeverAway.Core` — the platform-independent input-tap library (`IInputSimulator` + Windows / Mac / Linux implementations)
+- `src/NeverAway.Console` — cross-platform console runner (use this on macOS / Linux)
+- `src/NeverAway.Windows` — Windows tray UI (use this on Windows)
+
+Per-platform key choice:
+
+| platform | key tapped | mechanism |
+|---|---|---|
+| Windows | F24 (VK 0x87) | `user32.dll keybd_event` |
+| macOS | F15 (key code 113) | `osascript "tell System Events to key code 113"` |
+| Linux | F15 | `xdotool key F15` (install: `sudo apt install xdotool`) |
+
+F24 has no equivalent on the Mac key map; F15 is the convention [Caffeine](https://www.zhornsoftware.co.uk/caffeine/) uses and isn't on any modern keyboard.
+
+### Run on macOS / Linux
+
+```bash
+dotnet run --project src/NeverAway.Console
+```
+
+Ctrl+C to stop. Or publish a single-file binary:
+
+```bash
+dotnet publish src/NeverAway.Console -r osx-arm64 -c Release  # M-series Mac
+dotnet publish src/NeverAway.Console -r osx-x64   -c Release  # Intel Mac
+dotnet publish src/NeverAway.Console -r linux-x64 -c Release
+```
+
+The output binary is at `src/NeverAway.Console/bin/Release/net10.0/<rid>/publish/neveraway`. Copy it anywhere and run.
+
+> macOS users: the first Tap may trigger an Accessibility permission prompt for `osascript`. Allow it in System Settings → Privacy & Security → Accessibility. Subsequent runs work without prompts.
+
+### Run / publish on Windows
+
+```powershell
+# tray app (recommended)
+dotnet publish src/NeverAway.Windows -c Release
+# .\src\NeverAway.Windows\bin\Release\net10.0-windows\win-x64\publish\neveraway.exe
+
+# or the cross-platform console mode
+dotnet run --project src/NeverAway.Console
+```
+
+### Tests
+
+```bash
+dotnet test tests/NeverAway.Core.Tests
+```
+
 ## Why does this exist?
 
 From the codeplex archive:

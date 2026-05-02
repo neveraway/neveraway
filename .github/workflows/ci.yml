@@ -1,0 +1,35 @@
+# Build + test on every push to master and every PR.
+# Cross-platform matrix: Core + Console build everywhere; Windows tray
+# only on windows-latest (needs net10.0-windows + WinForms).
+
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: dotnet build (Core + Console)
+        run: |
+          dotnet build src/NeverAway.Core/NeverAway.Core.csproj -c Release
+          dotnet build src/NeverAway.Console/NeverAway.Console.csproj -c Release
+      - name: dotnet test
+        run: dotnet test tests/NeverAway.Core.Tests/NeverAway.Core.Tests.csproj -c Release --logger "console;verbosity=normal"
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: dotnet build (Windows tray)
+        run: dotnet build src/NeverAway.Windows/NeverAway.Windows.csproj -c Release

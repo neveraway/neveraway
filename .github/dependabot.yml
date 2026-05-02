@@ -1,0 +1,40 @@
+# dependabot.yml — auto-PR dependency updates.
+# Weekly Monday cadence, low noise.
+
+version: 2
+updates:
+
+  # GitHub Actions versions in workflows
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # NuGet — Core, Console, Windows, tests
+  - package-ecosystem: "nuget"
+    directory: "/src/NeverAway.Core"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+  - package-ecosystem: "nuget"
+    directory: "/src/NeverAway.Console"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+  - package-ecosystem: "nuget"
+    directory: "/src/NeverAway.Windows"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+  - package-ecosystem: "nuget"
+    directory: "/tests/NeverAway.Core.Tests"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      test-deps:
+        patterns: ["*"]

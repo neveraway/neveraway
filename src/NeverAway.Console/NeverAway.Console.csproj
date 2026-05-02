@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Cross-platform console runner. Runs on Windows / macOS / Linux. -->
+    <!-- Use this on Mac/Linux. On Windows, prefer NeverAway.Windows for -->
+    <!-- the tray-icon UX (this still works there, just no tray).        -->
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>NeverAway</RootNamespace>
+    <AssemblyName>neveraway</AssemblyName>
+    <ProductName>NeverAway</ProductName>
+    <PublisherName>Roy Ashbrook</PublisherName>
+    <ApplicationVersion>3.0.0.0</ApplicationVersion>
+    <!-- Single-file publish per RID — keeps the v2 shipping story.      -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NeverAway.Core\NeverAway.Core.csproj" />
+  </ItemGroup>
+
+</Project>
