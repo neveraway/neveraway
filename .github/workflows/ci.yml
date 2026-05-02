@@ -23,6 +23,18 @@ jobs:
           dotnet build src/NeverAway.Console/NeverAway.Console.csproj -c Release
       - name: dotnet test
         run: dotnet test tests/NeverAway.Core.Tests/NeverAway.Core.Tests.csproj -c Release --logger "console;verbosity=normal"
+      - name: dotnet publish (linux-x64)
+        run: dotnet publish src/NeverAway.Console/NeverAway.Console.csproj -c Release -r linux-x64 -o publish/linux-x64
+      - name: dotnet publish (osx-arm64)
+        run: dotnet publish src/NeverAway.Console/NeverAway.Console.csproj -c Release -r osx-arm64 -o publish/osx-arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: neveraway-linux-x64
+          path: publish/linux-x64/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: neveraway-osx-arm64
+          path: publish/osx-arm64/
 
   build-windows:
     runs-on: windows-latest
@@ -33,3 +45,9 @@ jobs:
           dotnet-version: '10.0.x'
       - name: dotnet build (Windows tray)
         run: dotnet build src/NeverAway.Windows/NeverAway.Windows.csproj -c Release
+      - name: dotnet publish (Windows tray, win-x64 single-file)
+        run: dotnet publish src/NeverAway.Windows/NeverAway.Windows.csproj -c Release -o publish/win-x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: neveraway-win-x64
+          path: publish/win-x64/
