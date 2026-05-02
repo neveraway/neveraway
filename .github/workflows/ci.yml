@@ -23,18 +23,10 @@ jobs:
           dotnet build src/NeverAway.Console/NeverAway.Console.csproj -c Release
       - name: dotnet test
         run: dotnet test tests/NeverAway.Core.Tests/NeverAway.Core.Tests.csproj -c Release --logger "console;verbosity=normal"
-      - name: dotnet publish (linux-x64)
-        run: dotnet publish src/NeverAway.Console/NeverAway.Console.csproj -c Release -r linux-x64 -o publish/linux-x64
       - name: dotnet publish (osx-arm64)
         run: dotnet publish src/NeverAway.Console/NeverAway.Console.csproj -c Release -r osx-arm64 -o publish/osx-arm64
-      - name: copy per-platform README into publish dirs
-        run: |
-          cp dist/linux-x64/README.txt publish/linux-x64/
-          cp dist/osx-arm64/README.txt publish/osx-arm64/
-      - uses: actions/upload-artifact@v4
-        with:
-          name: neveraway-linux-x64
-          path: publish/linux-x64/
+      - name: copy per-platform README into publish dir
+        run: cp dist/osx-arm64/README.txt publish/osx-arm64/
       - uses: actions/upload-artifact@v4
         with:
           name: neveraway-osx-arm64

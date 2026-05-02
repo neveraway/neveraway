@@ -4,35 +4,33 @@ namespace NeverAway.Core.Tests;
 
 public class InputSimulatorTests
 {
-    // Factory should always return SOMETHING for the OS this test is
-    // running on. We can't assert which concrete type without
-    // platform-conditional asserts; just confirm it's a non-null
-    // IInputSimulator.
-    [Fact]
-    public void ForCurrentOs_Returns_NonNull_Simulator()
-    {
-        var sim = InputSimulator.ForCurrentOs();
-        Assert.NotNull(sim);
-        Assert.IsAssignableFrom<IInputSimulator>(sim);
-    }
-
+    // On a supported OS, the factory returns the right concrete type.
+    // Early-return on unsupported (e.g. ubuntu CI runner) -- that case
+    // is covered by ForCurrentOs_Throws_On_Unsupported below.
     [Fact]
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
     [System.Runtime.Versioning.SupportedOSPlatform("macos")]
-    [System.Runtime.Versioning.SupportedOSPlatform("linux")]
     public void ForCurrentOs_Returns_PlatformSpecificType()
     {
+        if (!OperatingSystem.IsWindows() && !OperatingSystem.IsMacOS()) return;
         var sim = InputSimulator.ForCurrentOs();
         if (OperatingSystem.IsWindows()) Assert.IsType<WindowsInputSimulator>(sim);
         else if (OperatingSystem.IsMacOS()) Assert.IsType<MacInputSimulator>(sim);
-        else if (OperatingSystem.IsLinux()) Assert.IsType<LinuxInputSimulator>(sim);
+    }
+
+    // On an unsupported OS, the factory throws with a clear message.
+    // This is what ubuntu CI exercises -- early-return on win/mac.
+    [Fact]
+    public void ForCurrentOs_Throws_On_Unsupported()
+    {
+        if (OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()) return;
+        Assert.Throws<PlatformNotSupportedException>(() => InputSimulator.ForCurrentOs());
     }
 
     // Tap() behavior is intentionally NOT unit-tested:
     //   - Windows: keybd_event is a P/Invoke into user32.dll; testing it
     //     would just verify P/Invoke works
     //   - macOS: osascript may need Accessibility permission, awkward in CI
-    //   - Linux: xdotool may not be installed in CI
     // Real behavior verification is meatbag-tested:
     //   launch the app, confirm Teams/Slack don't go "Away" after 5+ min idle.
 }

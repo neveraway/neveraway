@@ -14,12 +14,12 @@ Very old (pre-codeplex) versions used a testing automation tool to simulate key 
 
 I wrote a small wrapper class called [KeyboardWrapper](https://github.com/royashbrook/KeyboardWrapper) but this project just uses the user32.dll call directly since I only need that one call. I did publish a nuget package for [KeyboardWrapper](https://github.com/royashbrook/KeyboardWrapper) in case anyone finds it useful. =)
 
-## v3 — cross-platform
+## v3 — modernized + macOS support
 
-v3 keeps the Windows tray UX exactly as before (download `neveraway.exe`, double-click, runs in tray) and adds **macOS + Linux** support via a small console runner. Three projects:
+v3 keeps the Windows tray UX exactly as before (download `neveraway.exe`, double-click, runs in tray) and adds **macOS** support via a small console runner. Three projects:
 
-- `src/NeverAway.Core` — the platform-independent input-tap library (`IInputSimulator` + Windows / Mac / Linux implementations)
-- `src/NeverAway.Console` — cross-platform console runner (use this on macOS / Linux)
+- `src/NeverAway.Core` — the platform-independent input-tap library (`IInputSimulator` + Windows / Mac implementations)
+- `src/NeverAway.Console` — console runner (use this on macOS)
 - `src/NeverAway.Windows` — Windows tray UI (use this on Windows)
 
 Per-platform key choice:
@@ -28,11 +28,10 @@ Per-platform key choice:
 |---|---|---|
 | Windows | F24 (VK 0x87) | `user32.dll keybd_event` |
 | macOS | F15 (key code 113) | `osascript "tell System Events to key code 113"` |
-| Linux | F15 | `xdotool key F15` (install: `sudo apt install xdotool`) |
 
 F24 has no equivalent on the Mac key map; F15 is the convention [Caffeine](https://www.zhornsoftware.co.uk/caffeine/) uses and isn't on any modern keyboard.
 
-### Run on macOS / Linux
+### Run on macOS
 
 ```bash
 dotnet run --project src/NeverAway.Console
@@ -43,7 +42,6 @@ Ctrl+C to stop. Or publish a single-file binary:
 ```bash
 dotnet publish src/NeverAway.Console -r osx-arm64 -c Release  # M-series Mac
 dotnet publish src/NeverAway.Console -r osx-x64   -c Release  # Intel Mac
-dotnet publish src/NeverAway.Console -r linux-x64 -c Release
 ```
 
 The output binary is at `src/NeverAway.Console/bin/Release/net10.0/<rid>/publish/neveraway`. Copy it anywhere and run.
