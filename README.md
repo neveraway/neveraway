@@ -16,22 +16,40 @@ I wrote a small wrapper class called [KeyboardWrapper](https://github.com/royash
 
 ## v3 — modernized + macOS support
 
-v3 keeps the Windows tray UX exactly as before (download `neveraway.exe`, double-click, runs in tray) and adds **macOS** support via a small console runner. Three projects:
+v3 keeps the Windows tray UX exactly as before (download `neveraway.exe`, double-click, runs in tray) and adds **macOS** support: a menu bar `.app` that mirrors the Windows tray UX (☕ in the menu bar, Pause / Quit dropdown), plus a console runner for cmdline-curious users. Four projects:
 
-- `src/NeverAway.Core` — the platform-independent input-tap library (`IInputSimulator` + Windows / Mac implementations)
-- `src/NeverAway.Console` — console runner (use this on macOS)
-- `src/NeverAway.Windows` — Windows tray UI (use this on Windows)
+- `src/NeverAway.Core` — the platform-independent input-tap library (`IInputSimulator` + Windows / Mac implementations + factory)
+- `src/NeverAway.Console` — cross-platform console runner (use this on Mac if you'd rather have a terminal-bound process)
+- `src/NeverAway.Windows` — Windows tray UI (Windows install path)
+- `src/NeverAway.Mac` — macOS menu bar app (Mac install path)
 
 Per-platform key choice:
 
 | platform | key tapped | mechanism |
 |---|---|---|
 | Windows | F24 (VK 0x87) | `user32.dll keybd_event` |
-| macOS | F19 (key code 80) | `osascript "tell System Events to key code 80"` |
+| macOS (.app) | F19 (key code 80) | `CGEventCreateKeyboardEvent` via P/Invoke |
+| macOS (cmdline) | F19 (key code 80) | `osascript "tell System Events to key code 80"` |
 
 Apple's virtual key code map only defines F1–F20, so F24 has no equivalent on Mac. F19 is the highest-safe F-key — not on any modern keyboard, no default system mapping. F15 is what [Caffeine](https://www.zhornsoftware.co.uk/caffeine/) traditionally used, but on some Mac configurations macOS interprets F15 as "brightness up", so we picked higher.
 
-### Run on macOS
+### Run on macOS — menu bar app (recommended)
+
+Download `NeverAway.app` from the latest release (or build it locally — see below), drag it into `/Applications`, double-click. ☕ appears in the menu bar. Click for Pause / Quit menu.
+
+First run shows the macOS gatekeeper warning (unsigned binary): right-click → Open → Open. One-time. First Tap also triggers an Accessibility permission prompt — allow in System Settings → Privacy & Security → Accessibility, then re-launch.
+
+Build locally:
+
+```bash
+dotnet publish src/NeverAway.Mac -c Release -r osx-arm64
+# binary at src/NeverAway.Mac/bin/Release/net10.0/osx-arm64/publish/neveraway
+# wrap in NeverAway.app/Contents/MacOS/, see .github/workflows/ci.yml for the bundle layout
+```
+
+### Run on macOS — console (cmdline alternative)
+
+If you'd rather have a terminal-bound process:
 
 ```bash
 dotnet run --project src/NeverAway.Console
@@ -44,9 +62,7 @@ dotnet publish src/NeverAway.Console -r osx-arm64 -c Release  # M-series Mac
 dotnet publish src/NeverAway.Console -r osx-x64   -c Release  # Intel Mac
 ```
 
-The output binary is at `src/NeverAway.Console/bin/Release/net10.0/<rid>/publish/neveraway`. Copy it anywhere and run.
-
-> macOS users: the first Tap may trigger an Accessibility permission prompt for `osascript`. Allow it in System Settings → Privacy & Security → Accessibility. Subsequent runs work without prompts.
+> Console runner uses osascript and triggers an Automation permission prompt instead of Accessibility. Same outcome (allow in System Settings), different toggle.
 
 ### Run / publish on Windows
 
