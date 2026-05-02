@@ -3,9 +3,10 @@ NeverAway -- macOS console (Apple Silicon)
 
 What this does
 --------------
-Sends a fake F15 keypress every 10 seconds so Teams / Slack /
-similar apps don't show you as "Away". F15 isn't on any modern
-Mac keyboard, so you won't see or feel anything.
+Sends a fake F19 keypress every 10 seconds so Teams / Slack /
+similar apps don't show you as "Away". F19 isn't on any modern
+Mac keyboard and has no system mapping, so you won't see or
+feel anything.
 
 How to run
 ----------

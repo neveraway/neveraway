@@ -2,9 +2,12 @@ using System.Diagnostics;
 
 namespace NeverAway.Core;
 
-// macOS has no F24, so we use F15 — same key Caffeine uses, present in
-// the virtual key code table (kVK_F15 = 113) but never on physical
-// keyboards in the wild.
+// macOS has no F24, so we use an obscure F-key from the virtual key
+// table that doesn't exist on physical keyboards. F15 (key code 113)
+// is what Caffeine traditionally used, but on some Mac configurations
+// macOS interprets F15 as "brightness up" -- the keypress becomes
+// visible. F19 (key code 80) is much safer: not on any keyboard and
+// no default system mapping.
 //
 // Implementation shells out to osascript ("AppleScript") rather than
 // P/Invoking ApplicationServices.framework's CGEventCreate. Reason:
@@ -20,9 +23,9 @@ namespace NeverAway.Core;
 [System.Runtime.Versioning.SupportedOSPlatform("macos")]
 public sealed class MacInputSimulator : IInputSimulator
 {
-    // F15 = key code 113 in the macOS Carbon-era virtual key map. System
-    // Events accepts that integer.
-    private const int KeyCode = 113;
+    // F19 = key code 80 (kVK_F19) in the macOS Carbon virtual key map.
+    // System Events accepts that integer.
+    private const int KeyCode = 80;
 
     public void Tap()
     {

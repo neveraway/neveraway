@@ -27,9 +27,9 @@ Per-platform key choice:
 | platform | key tapped | mechanism |
 |---|---|---|
 | Windows | F24 (VK 0x87) | `user32.dll keybd_event` |
-| macOS | F15 (key code 113) | `osascript "tell System Events to key code 113"` |
+| macOS | F19 (key code 80) | `osascript "tell System Events to key code 80"` |
 
-F24 has no equivalent on the Mac key map; F15 is the convention [Caffeine](https://www.zhornsoftware.co.uk/caffeine/) uses and isn't on any modern keyboard.
+Apple's virtual key code map only defines F1–F20, so F24 has no equivalent on Mac. F19 is the highest-safe F-key — not on any modern keyboard, no default system mapping. F15 is what [Caffeine](https://www.zhornsoftware.co.uk/caffeine/) traditionally used, but on some Mac configurations macOS interprets F15 as "brightness up", so we picked higher.
 
 ### Run on macOS
 
@@ -57,6 +57,22 @@ dotnet publish src/NeverAway.Windows -c Release
 
 # or the cross-platform console mode
 dotnet run --project src/NeverAway.Console
+```
+
+### Don't want to download? One-liners
+
+If you'd rather not install anything, the same key-tap-in-a-loop fits in a CLI one-liner. Ctrl+C to stop. Same key codes as the binaries (F24 on Windows, F19 on Mac).
+
+**Windows (PowerShell):**
+
+```powershell
+$k=Add-Type -MemberDefinition '[DllImport("user32.dll")]public static extern void keybd_event(byte v,byte s,int f,int e);' -Name N -Namespace W -PassThru;while($true){$k::keybd_event(0x87,0,2,0);Start-Sleep 10}
+```
+
+**macOS (bash):**
+
+```bash
+while true;do osascript -e 'tell application "System Events" to key code 80';sleep 10;done
 ```
 
 ### Tests
