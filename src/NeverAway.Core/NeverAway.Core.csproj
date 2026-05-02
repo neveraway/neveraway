@@ -10,6 +10,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>NeverAway.Core</RootNamespace>
+    <!-- Embed symbols in the assembly instead of producing a separate -->
+    <!-- .pdb. Matches the consuming Console/Windows projects so the   -->
+    <!-- single-file publish output stays clean (no orphan pdb).       -->
+    <DebugType>embedded</DebugType>
   </PropertyGroup>
 
 </Project>
