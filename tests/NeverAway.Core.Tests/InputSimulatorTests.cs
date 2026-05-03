@@ -4,33 +4,32 @@ namespace NeverAway.Core.Tests;
 
 public class InputSimulatorTests
 {
-    // On a supported OS, the factory returns the right concrete type.
-    // Early-return on unsupported (e.g. ubuntu CI runner) -- that case
-    // is covered by ForCurrentOs_Throws_On_Unsupported below.
+    // On Windows, the factory returns WindowsInputSimulator. On any other
+    // OS (including Mac, since the osascript-based MacInputSimulator was
+    // dropped along with NeverAway.Console), it throws.
     [Fact]
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
-    [System.Runtime.Versioning.SupportedOSPlatform("macos")]
-    public void ForCurrentOs_Returns_PlatformSpecificType()
+    public void ForCurrentOs_Returns_WindowsSimulator()
     {
-        if (!OperatingSystem.IsWindows() && !OperatingSystem.IsMacOS()) return;
+        if (!OperatingSystem.IsWindows()) return;
         var sim = InputSimulator.ForCurrentOs();
-        if (OperatingSystem.IsWindows()) Assert.IsType<WindowsInputSimulator>(sim);
-        else if (OperatingSystem.IsMacOS()) Assert.IsType<MacInputSimulator>(sim);
+        Assert.IsType<WindowsInputSimulator>(sim);
     }
 
-    // On an unsupported OS, the factory throws with a clear message.
-    // This is what ubuntu CI exercises -- early-return on win/mac.
+    // On non-Windows (ubuntu CI runner, Mac dev machines), the factory
+    // throws PlatformNotSupportedException. NeverAway.Mac instantiates
+    // its own CGEvent-based simulator directly without going through
+    // this factory.
     [Fact]
-    public void ForCurrentOs_Throws_On_Unsupported()
+    public void ForCurrentOs_Throws_On_NonWindows()
     {
-        if (OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()) return;
+        if (OperatingSystem.IsWindows()) return;
         Assert.Throws<PlatformNotSupportedException>(() => InputSimulator.ForCurrentOs());
     }
 
     // Tap() behavior is intentionally NOT unit-tested:
-    //   - Windows: keybd_event is a P/Invoke into user32.dll; testing it
-    //     would just verify P/Invoke works
-    //   - macOS: osascript may need Accessibility permission, awkward in CI
-    // Real behavior verification is meatbag-tested:
-    //   launch the app, confirm Teams/Slack don't go "Away" after 5+ min idle.
+    //   keybd_event is a P/Invoke into user32.dll; testing it would
+    //   just verify P/Invoke works. Real behavior verification is
+    //   meatbag-tested: launch the app, confirm Teams/Slack don't
+    //   go "Away" after 5+ min idle.
 }

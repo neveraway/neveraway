@@ -16,11 +16,10 @@ I wrote a small wrapper class called [KeyboardWrapper](https://github.com/royash
 
 ## v3 — modernized + macOS support
 
-v3 keeps the Windows tray UX exactly as before (download `neveraway.exe`, double-click, runs in tray) and adds **macOS** support: a menu bar `.app` that mirrors the Windows tray UX (☕ in the menu bar, Pause / Quit dropdown), plus a console runner for cmdline-curious users. Four projects:
+v3 keeps the Windows tray UX exactly as before (download `neveraway.exe`, double-click, runs in tray) and adds **macOS** support: a menu bar `.app` that mirrors the Windows tray UX (⛔ in the menu bar, Pause / Quit dropdown). Three projects:
 
-- `src/NeverAway.Core` — the platform-independent input-tap library (`IInputSimulator` + Windows / Mac implementations + factory)
-- `src/NeverAway.Console` — cross-platform console runner (use this on Mac if you'd rather have a terminal-bound process)
-- `src/NeverAway.Windows` — Windows tray UI (Windows install path)
+- `src/NeverAway.Core` — the platform-independent input-tap library (`IInputSimulator` + `WindowsInputSimulator`) plus the `AutoOffSchedule` logic
+- `src/NeverAway.Windows` — Windows tray UI (Windows install path) with auto-off scheduler
 - `src/NeverAway.Mac` — macOS menu bar app (Mac install path)
 
 Per-platform key choice:
@@ -28,8 +27,7 @@ Per-platform key choice:
 | platform | key tapped | mechanism |
 |---|---|---|
 | Windows | F24 (VK 0x87) | `user32.dll keybd_event` |
-| macOS (.app) | F19 (key code 80) | `CGEventCreateKeyboardEvent` via P/Invoke |
-| macOS (cmdline) | F19 (key code 80) | `osascript "tell System Events to key code 80"` |
+| macOS | F19 (key code 80) | `CGEventCreateKeyboardEvent` via P/Invoke |
 
 Apple's virtual key code map only defines F1–F20, so F24 has no equivalent on Mac. F19 is the highest-safe F-key — not on any modern keyboard, no default system mapping. F15 is what [Caffeine](https://www.zhornsoftware.co.uk/caffeine/) traditionally used, but on some Mac configurations macOS interprets F15 as "brightness up", so we picked higher.
 
@@ -54,32 +52,11 @@ dotnet publish src/NeverAway.Mac -c Release -r osx-arm64
 # wrap in NeverAway.app/Contents/MacOS/, see .github/workflows/ci.yml for the bundle layout
 ```
 
-### Run on macOS — console (cmdline alternative)
-
-If you'd rather have a terminal-bound process:
-
-```bash
-dotnet run --project src/NeverAway.Console
-```
-
-Ctrl+C to stop. Or publish a single-file binary:
-
-```bash
-dotnet publish src/NeverAway.Console -r osx-arm64 -c Release  # M-series Mac
-dotnet publish src/NeverAway.Console -r osx-x64   -c Release  # Intel Mac
-```
-
-> Console runner uses osascript and triggers an Automation permission prompt instead of Accessibility. Same outcome (allow in System Settings), different toggle.
-
 ### Run / publish on Windows
 
 ```powershell
-# tray app (recommended)
 dotnet publish src/NeverAway.Windows -c Release
 # .\src\NeverAway.Windows\bin\Release\net10.0-windows\win-x64\publish\neveraway.exe
-
-# or the cross-platform console mode
-dotnet run --project src/NeverAway.Console
 ```
 
 ### Don't want to download? One-liners
