@@ -14,6 +14,7 @@ internal static class Program
     private const string LibObjC = "/usr/lib/libobjc.dylib";
     private const string LibSystem = "/usr/lib/libSystem.dylib";
     private const string AppKitPath = "/System/Library/Frameworks/AppKit.framework/AppKit";
+    private const string AppServicesPath = "/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices";
 
     [DllImport(LibSystem)] private static extern IntPtr dlopen(string path, int mode);
     private const int RTLD_NOW = 2;
@@ -27,8 +28,17 @@ internal static class Program
 
     [DllImport(LibObjC, EntryPoint = "objc_msgSend")] private static extern IntPtr Msg(IntPtr o, IntPtr s);
     [DllImport(LibObjC, EntryPoint = "objc_msgSend")] private static extern IntPtr Msg(IntPtr o, IntPtr s, IntPtr a);
+    [DllImport(LibObjC, EntryPoint = "objc_msgSend")] private static extern IntPtr Msg(IntPtr o, IntPtr s, IntPtr a, IntPtr b);
     [DllImport(LibObjC, EntryPoint = "objc_msgSend")] private static extern IntPtr MsgD(IntPtr o, IntPtr s, double a);
     [DllImport(LibObjC, EntryPoint = "objc_msgSend")] private static extern void MsgVL(IntPtr o, IntPtr s, long a);
+    [DllImport(LibObjC, EntryPoint = "objc_msgSend")] private static extern IntPtr MsgB(IntPtr o, IntPtr s, byte b);
+
+    // Accessibility check + auto-prompt. Documented in <ApplicationServices/AXUIElement.h>.
+    // Pass a CFDictionary with kAXTrustedCheckOptionPrompt=YES to fire the system prompt
+    // when the process isn't yet trusted. NSDictionary is toll-free bridged to CFDictionary.
+    [DllImport("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")]
+    [return: MarshalAs(UnmanagedType.I1)]
+    private static extern bool AXIsProcessTrustedWithOptions(IntPtr options);
 
     private static IntPtr Cls(string n) => objc_getClass(n);
     private static IntPtr Sel(string n) => sel_registerName(n);
@@ -80,6 +90,20 @@ internal static class Program
         // dotnet only knows about the system frameworks we explicitly load.
         if (dlopen(AppKitPath, RTLD_NOW) == IntPtr.Zero)
             throw new InvalidOperationException($"failed to dlopen {AppKitPath}");
+        if (dlopen(AppServicesPath, RTLD_NOW) == IntPtr.Zero)
+            throw new InvalidOperationException($"failed to dlopen {AppServicesPath}");
+
+        // Trigger the macOS Accessibility permission prompt at startup
+        // instead of waiting for the first CGEventPost (which silently fails
+        // when not granted -- no auto-prompt, unlike osascript). Builds
+        // [NSDictionary dictionaryWithObject:@YES forKey:@"AXTrustedCheckOptionPrompt"]
+        // and passes it to AXIsProcessTrustedWithOptions.
+        var promptKey = NSString("AXTrustedCheckOptionPrompt");
+        var trueVal = MsgB(Cls("NSNumber"), Sel("numberWithBool:"), 1);
+        var options = Msg(Cls("NSDictionary"), Sel("dictionaryWithObject:forKey:"), trueVal, promptKey);
+        AXIsProcessTrustedWithOptions(options);
+        // Return value intentionally ignored. If user grants, future taps work.
+        // If user dismisses, taps silently fail until they re-launch and grant.
 
         // Custom NSObject subclass to host the menu-action callbacks.
         // The Objective-C runtime needs a real class with selectors --
