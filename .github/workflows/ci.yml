@@ -50,7 +50,7 @@ jobs:
           codesign --force --deep --sign - $APP
           codesign --verify --strict $APP
           cp dist/mac-app/README.txt publish/mac-app/README.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: neveraway-mac-app
           path: publish/mac-app/
@@ -69,7 +69,7 @@ jobs:
       - name: copy per-platform README into publish dir
         shell: bash
         run: cp dist/win-x64/README.txt publish/win-x64/
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: neveraway-win-x64
           path: publish/win-x64/
