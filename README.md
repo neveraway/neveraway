@@ -35,9 +35,16 @@ Apple's virtual key code map only defines F1–F20, so F24 has no equivalent on 
 
 ### Run on macOS — menu bar app (recommended)
 
-Download `NeverAway.app` from the latest release (or build it locally — see below), drag it into `/Applications`, double-click. ☕ appears in the menu bar. Click for Pause / Quit menu.
+Download `NeverAway.app` from the latest release (or build it locally — see below), drag it into `/Applications`, double-click. A ⛔ glyph appears in the menu bar. Click for Pause / Quit menu (⛔ flips to 🛡 when paused).
 
-First run shows the macOS gatekeeper warning (unsigned binary): right-click → Open → Open. One-time. First Tap also triggers an Accessibility permission prompt — allow in System Settings → Privacy & Security → Accessibility, then re-launch.
+**First-launch gatekeeper bypass.** NeverAway is ad-hoc signed but not signed with an Apple Developer ID, so on first launch macOS blocks it with "could not be verified" or "is damaged". Right-click → Open used to bypass this; it doesn't work on modern macOS (Sonoma / Sequoia / later). Either:
+
+- **Mouse-only:** try to open → blocked → System Settings → Privacy & Security → scroll to "Security" → "Open Anyway" button next to "NeverAway was blocked..." → confirm → double-click works
+- **Terminal:** `xattr -dr com.apple.quarantine /path/to/NeverAway.app` then double-click
+
+Either is one-time. After first successful launch, macOS remembers the decision.
+
+**Accessibility prompt** on first Tap (~10s after launch): "NeverAway wants to control your computer using accessibility features." → Open System Settings → flip the toggle next to NeverAway in the Accessibility list → re-launch NeverAway.
 
 Build locally:
 

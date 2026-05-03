@@ -14,14 +14,29 @@ How to run
 1. Drag NeverAway.app into your /Applications folder (or run it
    from wherever you unzipped it).
 
-2. The first time you double-click it, macOS will block it as
-   "downloaded from the internet, unidentified developer":
+2. First-launch gatekeeper bypass.
 
-       Right-click (or Control-click) NeverAway.app
-       -> "Open"
-       -> "Open" again in the dialog
+   NeverAway is ad-hoc signed but not signed with an Apple
+   Developer ID, so on first launch macOS blocks it with
+   either "could not be verified" or "is damaged". Right-click
+   -> Open used to bypass this; it doesn't work on modern macOS
+   (Sonoma / Sequoia / later). Two ways to get past it:
 
-   This is a one-time gatekeeper bypass for unsigned apps.
+   Mouse-only path (Apple's intended flow):
+     a. Try to open NeverAway.app -> blocked dialog appears
+     b. Open System Settings -> Privacy & Security
+     c. Scroll down to the "Security" section
+     d. Look for "NeverAway was blocked..." with an
+        "Open Anyway" button -- click it
+     e. Confirm in the dialog
+     f. Now double-click NeverAway.app -- it'll launch
+
+   Terminal one-liner (faster if you have a terminal open):
+     xattr -dr com.apple.quarantine /path/to/NeverAway.app
+     # then double-click
+
+   Either is one-time. After first successful launch, macOS
+   remembers the user-approved decision.
 
 3. Look in your menu bar (top-right of the screen, near the
    clock / wifi / battery widgets). You should see a "no entry"
@@ -31,8 +46,8 @@ How to run
        Pause       toggle on/off (icon flips to a shield 🛡 when paused)
        Quit NeverAway
 
-5. The first time NeverAway taps a key, macOS will show an
-   Accessibility permission prompt:
+5. The first time NeverAway taps a key (within ~10s of launch),
+   macOS will show an Accessibility permission prompt:
 
        "NeverAway wants to control your computer using
         accessibility features."
@@ -44,18 +59,5 @@ How to run
 That's it. Quit via the menu, or it'll keep running until you
 log out / shut down. To start automatically at login, drag
 NeverAway.app into System Settings -> General -> Login Items.
-
-Troubleshooting
----------------
-"NeverAway.app is damaged and can't be opened":
-
-  This happens if macOS thinks the gatekeeper signature is
-  invalid. Strip the download-quarantine flag manually:
-
-      xattr -dr com.apple.quarantine /path/to/NeverAway.app
-
-  Then double-click again. The app is signed (ad-hoc) but
-  unsigned by an Apple Developer ID, so gatekeeper applies
-  extra scrutiny on first launch.
 
 Source / issues: https://github.com/neveraway/neveraway
