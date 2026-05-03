@@ -48,6 +48,13 @@ internal static class Program
     // Toggle/Quit state -- read by both UI thread and tap-loop thread.
     private static volatile bool _isActive = true;
     private static IntPtr _toggleItem;
+    private static IntPtr _statusButton;
+
+    // Match the Windows tray's deliberate icon choice:
+    //   active   = SystemIcons.Error (red alert)        -> "no entry" ⛔
+    //   inactive = SystemIcons.Shield (security/paused) -> shield     🛡
+    private const string IconActive = "⛔";   // ⛔
+    private const string IconInactive = "🛡️"; // 🛡 with VS-16
 
     [UnmanagedCallersOnly]
     private static void OnTogglePressed(IntPtr self, IntPtr cmd)
@@ -55,6 +62,8 @@ internal static class Program
         _isActive = !_isActive;
         if (_toggleItem != IntPtr.Zero)
             Msg(_toggleItem, Sel("setTitle:"), NSString(_isActive ? "Pause" : "Resume"));
+        if (_statusButton != IntPtr.Zero)
+            Msg(_statusButton, Sel("setTitle:"), NSString(_isActive ? IconActive : IconInactive));
     }
 
     [UnmanagedCallersOnly]
@@ -92,12 +101,12 @@ internal static class Program
         var app = Msg(Cls("NSApplication"), Sel("sharedApplication"));
         MsgVL(app, Sel("setActivationPolicy:"), 1L); // NSApplicationActivationPolicyAccessory
 
-        // Status item with variable length, coffee glyph as title
+        // Status item with variable length, icon as title (see IconActive/IconInactive)
         var statusBar = Msg(Cls("NSStatusBar"), Sel("systemStatusBar"));
         var statusItem = MsgD(statusBar, Sel("statusItemWithLength:"), -1.0); // NSVariableStatusItemLength
-        var button = Msg(statusItem, Sel("button"));
-        Msg(button, Sel("setTitle:"), NSString("☕")); // ☕
-        Msg(button, Sel("setToolTip:"), NSString("NeverAway"));
+        _statusButton = Msg(statusItem, Sel("button"));
+        Msg(_statusButton, Sel("setTitle:"), NSString(IconActive));
+        Msg(_statusButton, Sel("setToolTip:"), NSString("NeverAway"));
 
         // Menu: Pause / -- / Quit
         var menu = Msg(Msg(Cls("NSMenu"), Sel("alloc")), Sel("init"));

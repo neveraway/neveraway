@@ -32,15 +32,33 @@ jobs:
           name: neveraway-osx-arm64
           path: publish/osx-arm64/
 
-      - name: dotnet publish (Mac menu-bar app binary, osx-arm64)
+  # NeverAway.app bundle build is on macos-latest specifically because
+  # we need `codesign` to re-sign the assembled bundle. dotnet's cross-
+  # publish from Linux ad-hoc signs the binary BEFORE bundle assembly,
+  # so the bundle's Info.plist isn't sealed to the signature -- macOS
+  # then refuses to launch with a "damaged" error. Re-signing the whole
+  # bundle on macOS produces a valid ad-hoc signature gatekeeper accepts.
+  build-mac-app:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: dotnet publish (NeverAway.Mac, osx-arm64 single-file)
         run: dotnet publish src/NeverAway.Mac/NeverAway.Mac.csproj -c Release -o publish/mac-binary
-      - name: assemble NeverAway.app bundle
+      - name: assemble NeverAway.app bundle + ad-hoc codesign
         run: |
           APP=publish/mac-app/NeverAway.app
           mkdir -p $APP/Contents/MacOS
           cp src/NeverAway.Mac/Info.plist $APP/Contents/Info.plist
           cp publish/mac-binary/neveraway $APP/Contents/MacOS/neveraway
           chmod +x $APP/Contents/MacOS/neveraway
+          # --force overwrites the binary's inner adhoc sig with one that
+          # covers the whole bundle (Info.plist + Contents/* sealed).
+          # --deep recursively signs nested binaries.
+          codesign --force --deep --sign - $APP
+          codesign --verify --strict $APP
           cp dist/mac-app/README.txt publish/mac-app/README.txt
       - uses: actions/upload-artifact@v4
         with:
