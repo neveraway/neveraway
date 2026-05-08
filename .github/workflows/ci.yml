@@ -1,0 +1,75 @@
+# Build + test on every push to master and every PR.
+# Cross-platform matrix: Core + Console build everywhere; Windows tray
+# only on windows-latest (needs net10.0-windows + WinForms).
+
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: dotnet build (Core)
+        run: dotnet build src/NeverAway.Core/NeverAway.Core.csproj -c Release
+      - name: dotnet test
+        run: dotnet test tests/NeverAway.Core.Tests/NeverAway.Core.Tests.csproj -c Release --logger "console;verbosity=normal"
+
+  # NeverAway.app bundle build is on macos-latest specifically because
+  # we need `codesign` to re-sign the assembled bundle. dotnet's cross-
+  # publish from Linux ad-hoc signs the binary BEFORE bundle assembly,
+  # so the bundle's Info.plist isn't sealed to the signature -- macOS
+  # then refuses to launch with a "damaged" error. Re-signing the whole
+  # bundle on macOS produces a valid ad-hoc signature gatekeeper accepts.
+  build-mac-app:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: dotnet publish (NeverAway.Mac, osx-arm64 single-file)
+        run: dotnet publish src/NeverAway.Mac/NeverAway.Mac.csproj -c Release -o publish/mac-binary
+      - name: assemble NeverAway.app bundle + ad-hoc codesign
+        run: |
+          APP=publish/mac-app/NeverAway.app
+          mkdir -p $APP/Contents/MacOS
+          cp src/NeverAway.Mac/Info.plist $APP/Contents/Info.plist
+          cp publish/mac-binary/neveraway $APP/Contents/MacOS/neveraway
+          chmod +x $APP/Contents/MacOS/neveraway
+          # --force overwrites the binary's inner adhoc sig with one that
+          # covers the whole bundle (Info.plist + Contents/* sealed).
+          # --deep recursively signs nested binaries.
+          codesign --force --deep --sign - $APP
+          codesign --verify --strict $APP
+          cp dist/mac-app/README.txt publish/mac-app/README.txt
+      - uses: actions/upload-artifact@v7
+        with:
+          name: neveraway-mac-app
+          path: publish/mac-app/
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: dotnet build (Windows tray)
+        run: dotnet build src/NeverAway.Windows/NeverAway.Windows.csproj -c Release
+      - name: dotnet publish (Windows tray, win-x64 single-file)
+        run: dotnet publish src/NeverAway.Windows/NeverAway.Windows.csproj -c Release -o publish/win-x64
+      - name: copy per-platform README into publish dir
+        shell: bash
+        run: cp dist/win-x64/README.txt publish/win-x64/
+      - uses: actions/upload-artifact@v7
+        with:
+          name: neveraway-win-x64
+          path: publish/win-x64/

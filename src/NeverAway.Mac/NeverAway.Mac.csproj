@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- net10.0 (cross-platform) instead of net10.0-macos:                -->
+    <!--   - net10.0-macos requires the macos workload AND a full Xcode    -->
+    <!--     install (~10GB) on whatever machine runs the build. Forces    -->
+    <!--     CI to a macos-latest runner with the workload installed.      -->
+    <!--   - net10.0 + raw P/Invoke into AppKit + CoreGraphics builds on   -->
+    <!--     ubuntu-latest with no extra deps. Mach-O cross-build works.   -->
+    <!--                                                                   -->
+    <!-- Tradeoff: more lines of P/Invoke for the menu-bar UI, but the     -->
+    <!-- per-machine build setup stays uniform across the project.         -->
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <RuntimeIdentifier>osx-arm64</RuntimeIdentifier>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>NeverAway.Mac</RootNamespace>
+    <AssemblyName>neveraway</AssemblyName>
+    <ApplicationVersion>3.0.0.0</ApplicationVersion>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <DebugType>embedded</DebugType>
+    <!-- delegate* unmanaged<...> pointers for menu-action callbacks. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NeverAway.Core\NeverAway.Core.csproj" />
+  </ItemGroup>
+
+</Project>

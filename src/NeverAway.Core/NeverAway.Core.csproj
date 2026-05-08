@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Pure-library: interfaces + per-platform input simulators +       -->
+    <!-- factory. No Main, no UI. The two consuming projects are:         -->
+    <!--   NeverAway.Console — cross-platform console runner              -->
+    <!--   NeverAway.Windows — Windows tray UI                            -->
+    <!-- Both reference this, both call InputSimulator.ForCurrentOs().    -->
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>NeverAway.Core</RootNamespace>
+    <!-- Embed symbols in the assembly instead of producing a separate -->
+    <!-- .pdb. Matches the consuming Console/Windows projects so the   -->
+    <!-- single-file publish output stays clean (no orphan pdb).       -->
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+</Project>

@@ -14,6 +14,73 @@ Very old (pre-codeplex) versions used a testing automation tool to simulate key 
 
 I wrote a small wrapper class called [KeyboardWrapper](https://github.com/royashbrook/KeyboardWrapper) but this project just uses the user32.dll call directly since I only need that one call. I did publish a nuget package for [KeyboardWrapper](https://github.com/royashbrook/KeyboardWrapper) in case anyone finds it useful. =)
 
+## v3 — modernized + macOS support
+
+v3 keeps the Windows tray UX exactly as before (download `neveraway.exe`, double-click, runs in tray) and adds **macOS** support: a menu bar `.app` that mirrors the Windows tray UX (⛔ in the menu bar, Pause / Quit dropdown). Three projects:
+
+- `src/NeverAway.Core` — the platform-independent input-tap library (`IInputSimulator` + `WindowsInputSimulator`) plus the `AutoOffSchedule` logic
+- `src/NeverAway.Windows` — Windows tray UI (Windows install path) with auto-off scheduler
+- `src/NeverAway.Mac` — macOS menu bar app (Mac install path)
+
+Per-platform key choice:
+
+| platform | key tapped | mechanism |
+|---|---|---|
+| Windows | F24 (VK 0x87) | `user32.dll keybd_event` |
+| macOS | F19 (key code 80) | `CGEventCreateKeyboardEvent` via P/Invoke |
+
+Apple's virtual key code map only defines F1–F20, so F24 has no equivalent on Mac. F19 is the highest-safe F-key — not on any modern keyboard, no default system mapping. F15 is what [Caffeine](https://www.zhornsoftware.co.uk/caffeine/) traditionally used, but on some Mac configurations macOS interprets F15 as "brightness up", so we picked higher.
+
+### Run on macOS — menu bar app (recommended)
+
+Download `NeverAway.app` from the latest release (or build it locally — see below), drag it into `/Applications`, double-click. A ⛔ glyph appears in the menu bar. Click for Pause / Quit menu (⛔ flips to 🛡 when paused).
+
+**First-launch gatekeeper bypass.** NeverAway is ad-hoc signed but not signed with an Apple Developer ID, so on first launch macOS blocks it with "could not be verified" or "is damaged". Right-click → Open used to bypass this; it doesn't work on modern macOS (Sonoma / Sequoia / later). Either:
+
+- **Mouse-only:** try to open → blocked → System Settings → Privacy & Security → scroll to "Security" → "Open Anyway" button next to "NeverAway was blocked..." → confirm → double-click works
+- **Terminal:** `xattr -dr com.apple.quarantine /path/to/NeverAway.app` then double-click
+
+Either is one-time. After first successful launch, macOS remembers the decision.
+
+**Accessibility prompt** on first Tap (~10s after launch): "NeverAway wants to control your computer using accessibility features." → Open System Settings → flip the toggle next to NeverAway in the Accessibility list → re-launch NeverAway.
+
+Build locally:
+
+```bash
+dotnet publish src/NeverAway.Mac -c Release -r osx-arm64
+# binary at src/NeverAway.Mac/bin/Release/net10.0/osx-arm64/publish/neveraway
+# wrap in NeverAway.app/Contents/MacOS/, see .github/workflows/ci.yml for the bundle layout
+```
+
+### Run / publish on Windows
+
+```powershell
+dotnet publish src/NeverAway.Windows -c Release
+# .\src\NeverAway.Windows\bin\Release\net10.0-windows\win-x64\publish\neveraway.exe
+```
+
+### Don't want to download? One-liners
+
+If you'd rather not install anything, the same key-tap-in-a-loop fits in a CLI one-liner. Ctrl+C to stop. Same key codes as the binaries (F24 on Windows, F19 on Mac).
+
+**Windows (PowerShell):**
+
+```powershell
+$k=Add-Type -MemberDefinition '[DllImport("user32.dll")]public static extern void keybd_event(byte v,byte s,int f,int e);' -Name N -Namespace W -PassThru;while($true){$k::keybd_event(0x87,0,2,0);Start-Sleep 10}
+```
+
+**macOS (bash):**
+
+```bash
+while true;do osascript -e 'tell application "System Events" to key code 80';sleep 10;done
+```
+
+### Tests
+
+```bash
+dotnet test tests/NeverAway.Core.Tests
+```
+
 ## Why does this exist?
 
 From the codeplex archive:
