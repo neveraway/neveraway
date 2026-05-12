@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Reject commits that don't reference an issue (#NNN).
+# Public repo; every commit should trace to an issue for context.
+
+set -e
+
+msg_file="$1"
+content=$(grep -vE '^#' "$msg_file" || true)
+
+first_line=$(echo "$content" | head -n 1)
+if echo "$first_line" | grep -qE '^(Merge|Revert) '; then
+  exit 0
+fi
+
+if echo "$content" | grep -qE '#[0-9]+'; then
+  exit 0
+fi
+
+cat >&2 <<EOF
+ERROR: commit message must reference an issue (e.g. #42, closes #42, (#42)).
+every commit traces to an issue. open one or find the existing one,
+then amend the message.
+EOF
+exit 1
