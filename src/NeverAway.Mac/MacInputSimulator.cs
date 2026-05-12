@@ -3,33 +3,57 @@ using NeverAway.Core;
 
 namespace NeverAway.Mac;
 
-// CGEvent-based F19 keypress via raw P/Invoke into ApplicationServices.
-// F19 (kVK_F19 = 80) is the highest-safe macOS virtual key code -- not
-// on any physical keyboard, no system mapping. Same key the Console
-// runner uses, but posted via CGEvent directly instead of shelling
-// out to osascript.
+// CGEvent-based zero-pixel mouse-move via raw P/Invoke into
+// ApplicationServices.
 //
-// Why this approach:
-//   - Single permission category: Accessibility (vs osascript's
-//     Automation prompt). One unified prompt for the .app bundle.
-//   - No process spawn per tick (~30ms savings, irrelevant at 10s
-//     intervals but still cleaner).
-//   - No Xcode / macos workload needed -- raw P/Invoke into a system
-//     framework is plain net10.0.
+// v3.0.0 used a synthetic F19 keypress via CGEventCreateKeyboardEvent +
+// CGEventPost. On modern macOS, synthetic keyboard events reset the HID
+// idle counter (so display dim / sleep is correctly prevented) but do
+// NOT reset the screen-saver idle counter. Screen saver activation
+// gates the lock screen via "Require password after screen saver begins
+// or display is turned off" in System Settings, so the lock fires even
+// while we're "tapping" the keyboard. Power-assertion APIs
+// (IOPMAssertionDeclareUserActivity, IOPMAssertionCreateWithName) have
+// the same limitation -- they prevent display sleep but not screen
+// saver. The known-working approach is a synthetic mouse-move event,
+// same shape Amphetamine's "automated mouse cursor movement" feature
+// uses to fill the gap.
 //
-// First call triggers the macOS Accessibility permission prompt:
-//   "NeverAway wants to control your computer using accessibility..."
-// User clicks through to System Settings > Privacy & Security >
-// Accessibility, toggles NeverAway on. Subsequent runs work without
-// further prompts.
+// We probe the current cursor position via CGEventCreate + CGEventGetLocation,
+// then post a mouse-moved event at the same coordinates. Zero-pixel
+// delta -- the cursor doesn't actually move, but the screen-saver idle
+// counter resets.
+//
+// Permission requirement is unchanged: Accessibility. CGEventPost gates
+// the same way for keyboard and mouse events.
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct CGPoint
+{
+    public double X;
+    public double Y;
+}
+
 public sealed class MacInputSimulator : IInputSimulator
 {
-    private const ushort KVK_F19 = 80;
     private const string ApplicationServices =
         "/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices";
 
+    // CGEventType.kCGEventMouseMoved = 5
+    private const uint CGEventMouseMoved = 5;
+    // CGMouseButton.kCGMouseButtonLeft = 0 (ignored for mouse-moved, required by signature)
+    private const uint CGMouseButtonLeft = 0;
+    // CGEventTapLocation.HID = 0 (lowest in the chain, all observers see it)
+    private const uint TapLocationHid = 0;
+
     [DllImport(ApplicationServices)]
-    private static extern IntPtr CGEventCreateKeyboardEvent(IntPtr source, ushort virtualKey, [MarshalAs(UnmanagedType.I1)] bool keyDown);
+    private static extern IntPtr CGEventCreate(IntPtr source);
+
+    [DllImport(ApplicationServices)]
+    private static extern CGPoint CGEventGetLocation(IntPtr ev);
+
+    [DllImport(ApplicationServices)]
+    private static extern IntPtr CGEventCreateMouseEvent(IntPtr source, uint mouseType, CGPoint position, uint button);
 
     [DllImport(ApplicationServices)]
     private static extern void CGEventPost(uint tap, IntPtr ev);
@@ -37,23 +61,18 @@ public sealed class MacInputSimulator : IInputSimulator
     [DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
     private static extern void CFRelease(IntPtr cf);
 
-    // CGEventTapLocation.HID = 0 (lowest in the chain, all observers see it)
-    private const uint TapLocationHid = 0;
-
     public void Tap()
     {
-        var down = CGEventCreateKeyboardEvent(IntPtr.Zero, KVK_F19, true);
-        if (down != IntPtr.Zero)
-        {
-            CGEventPost(TapLocationHid, down);
-            CFRelease(down);
-        }
+        var probe = CGEventCreate(IntPtr.Zero);
+        if (probe == IntPtr.Zero) return;
+        var pos = CGEventGetLocation(probe);
+        CFRelease(probe);
 
-        var up = CGEventCreateKeyboardEvent(IntPtr.Zero, KVK_F19, false);
-        if (up != IntPtr.Zero)
+        var ev = CGEventCreateMouseEvent(IntPtr.Zero, CGEventMouseMoved, pos, CGMouseButtonLeft);
+        if (ev != IntPtr.Zero)
         {
-            CGEventPost(TapLocationHid, up);
-            CFRelease(up);
+            CGEventPost(TapLocationHid, ev);
+            CFRelease(ev);
         }
     }
 }
