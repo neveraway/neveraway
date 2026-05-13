@@ -73,7 +73,17 @@ internal static class Program
     private static IntPtr _cancelScheduleItem;
     private static IntPtr _actionTarget;
     private static MacInputSimulator? _sim;
-    private static readonly AutoOffSchedule _schedule = new();
+    private static readonly AutoOffSchedule _schedule = new()
+    {
+        // Test-cycle defaults: Core's defaults (2h / 6:00 PM) require
+        // long waits to validate. Mac is mid-development; until the
+        // Configure dialog lands in phase 2, override to short values
+        // so click-cycle + schedule-firing + auto-on can be tested in
+        // ~minutes. Restore Core defaults (or wire Configure dialog)
+        // before v3.0.2 ships.
+        Slot1 = { Value = TimeSpan.FromMinutes(1) }, // Duration 1 min
+        Slot2 = { Value = new TimeSpan(23, 59, 0) }, // Absolute 11:59 PM
+    };
 
     // Match the Windows tray's deliberate icon choice:
     //   active   = SystemIcons.Error (red alert)        -> "no entry" ⛔
