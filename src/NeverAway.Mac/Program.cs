@@ -287,18 +287,30 @@ internal static class Program
 
         Msg(_statusItem, Sel("setMenu:"), menu);
 
-        // Subscribe to NSWorkspace notifications for auto-on re-arm:
-        //   NSWorkspaceSessionDidBecomeActiveNotification -- session unlock
-        //   NSWorkspaceDidWakeNotification -- system wake from sleep
+        // Subscribe to two notification streams for auto-on re-arm:
+        //
+        //   1. NSWorkspaceDidWakeNotification on [NSWorkspace sharedWorkspace]
+        //      notificationCenter -- fires when the system wakes from sleep.
+        //
+        //   2. "com.apple.screenIsUnlocked" on NSDistributedNotificationCenter --
+        //      fires when the screen unlocks. NOT exposed via NSWorkspace
+        //      (the Workspace SessionDidBecomeActive notification is for
+        //      fast-user-switching, NOT screen lock/unlock as one might guess
+        //      from the name). The Mac equivalent of Windows'
+        //      SessionSwitchReason.SessionUnlock comes through the distributed
+        //      notification center.
+        var wakeSel = Sel("wakeOrUnlock:");
+
         var workspace = Msg(Cls("NSWorkspace"), Sel("sharedWorkspace"));
         var wsCenter = Msg(workspace, Sel("notificationCenter"));
-        var wakeSel = Sel("wakeOrUnlock:");
-        Msg(wsCenter, Sel("addObserver:selector:name:object:"),
-            actionTarget, wakeSel,
-            NSString("NSWorkspaceSessionDidBecomeActiveNotification"), IntPtr.Zero);
         Msg(wsCenter, Sel("addObserver:selector:name:object:"),
             actionTarget, wakeSel,
             NSString("NSWorkspaceDidWakeNotification"), IntPtr.Zero);
+
+        var distCenter = Msg(Cls("NSDistributedNotificationCenter"), Sel("defaultCenter"));
+        Msg(distCenter, Sel("addObserver:selector:name:object:"),
+            actionTarget, wakeSel,
+            NSString("com.apple.screenIsUnlocked"), IntPtr.Zero);
 
         RefreshScheduleMenu();
 
