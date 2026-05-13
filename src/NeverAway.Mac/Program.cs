@@ -1,4 +1,7 @@
+using System.Globalization;
 using System.Runtime.InteropServices;
+using NeverAway.Core;
+using static NeverAway.Core.AutoOffSchedule;
 
 namespace NeverAway.Mac;
 
@@ -30,9 +33,13 @@ internal static class Program
     [DllImport(LibObjC, EntryPoint = "objc_msgSend")] private static extern IntPtr Msg(IntPtr o, IntPtr s);
     [DllImport(LibObjC, EntryPoint = "objc_msgSend")] private static extern IntPtr Msg(IntPtr o, IntPtr s, IntPtr a);
     [DllImport(LibObjC, EntryPoint = "objc_msgSend")] private static extern IntPtr Msg(IntPtr o, IntPtr s, IntPtr a, IntPtr b);
+    [DllImport(LibObjC, EntryPoint = "objc_msgSend")] private static extern IntPtr Msg(IntPtr o, IntPtr s, IntPtr a, IntPtr b, IntPtr c);
+    [DllImport(LibObjC, EntryPoint = "objc_msgSend")] private static extern IntPtr Msg(IntPtr o, IntPtr s, IntPtr a, IntPtr b, IntPtr c, IntPtr d);
     [DllImport(LibObjC, EntryPoint = "objc_msgSend")] private static extern IntPtr MsgD(IntPtr o, IntPtr s, double a);
     [DllImport(LibObjC, EntryPoint = "objc_msgSend")] private static extern void MsgVL(IntPtr o, IntPtr s, long a);
     [DllImport(LibObjC, EntryPoint = "objc_msgSend")] private static extern IntPtr MsgB(IntPtr o, IntPtr s, byte b);
+    // performSelectorOnMainThread:withObject:waitUntilDone: -- last arg is BOOL (byte).
+    [DllImport(LibObjC, EntryPoint = "objc_msgSend")] private static extern void MsgPerformOnMain(IntPtr o, IntPtr s, IntPtr a, IntPtr b, byte c);
 
     // Accessibility check + auto-prompt. Documented in <ApplicationServices/AXUIElement.h>.
     // Pass a CFDictionary with kAXTrustedCheckOptionPrompt=YES to fire the system prompt
@@ -60,7 +67,13 @@ internal static class Program
     private static volatile bool _isActive = true;
     private static IntPtr _toggleItem;
     private static IntPtr _statusButton;
+    private static IntPtr _statusItem;       // for setToolTip:
+    private static IntPtr _slot1Item;
+    private static IntPtr _slot2Item;
+    private static IntPtr _cancelScheduleItem;
+    private static IntPtr _actionTarget;
     private static MacInputSimulator? _sim;
+    private static readonly AutoOffSchedule _schedule = new();
 
     // Match the Windows tray's deliberate icon choice:
     //   active   = SystemIcons.Error (red alert)        -> "no entry" ⛔
@@ -68,19 +81,78 @@ internal static class Program
     private const string IconActive = "⛔";   // ⛔
     private const string IconInactive = "🛡️"; // 🛡 with VS-16
 
-    [UnmanagedCallersOnly]
-    private static void OnTogglePressed(IntPtr self, IntPtr cmd)
+    // NSControlStateValueOn = 1, NSControlStateValueMixed = -1, NSControlStateValueOff = 0
+    private const long NSControlStateOn    = 1;
+    private const long NSControlStateMixed = -1;
+    private const long NSControlStateOff   = 0;
+
+    // Regular method -- both menu-click and tap-loop auto-off route here.
+    // Mirror of Windows TrayApp.Toggle(isAuto).
+    private static void Toggle(bool isAuto)
     {
         _isActive = !_isActive;
+        if (!_isActive)
+        {
+            _schedule.Cause = isAuto ? OffCause.Auto : OffCause.Manual;
+            // Manual-off clears any pending schedule (the off it was going to
+            // trigger already happened). Auto-off keeps the schedule alive so
+            // Daily mode can rearm in OnFired.
+            if (!isAuto) _schedule.Cancel();
+            _sim?.ReleaseAllAssertions();
+        }
+        else
+        {
+            _schedule.Cause = OffCause.None;
+        }
         if (_toggleItem != IntPtr.Zero)
             Msg(_toggleItem, Sel("setTitle:"), NSString(_isActive ? "Pause" : "Resume"));
         if (_statusButton != IntPtr.Zero)
             Msg(_statusButton, Sel("setTitle:"), NSString(_isActive ? IconActive : IconInactive));
-        // On Pause, release IOPM assertions so the OS resumes normal idle
-        // behavior (display sleep, screen lock can fire). On Resume, the
-        // next Tap() re-creates them via EnsurePersistentAssertions().
-        if (!_isActive)
-            _sim?.ReleaseAllAssertions();
+        RefreshScheduleMenu();
+    }
+
+    [UnmanagedCallersOnly]
+    private static void OnTogglePressed(IntPtr self, IntPtr cmd) => Toggle(isAuto: false);
+
+    // Called via performSelectorOnMainThread: from the tap loop when the
+    // schedule fires. Marshals the auto-off onto the main thread so the
+    // menu / status-bar updates happen safely.
+    [UnmanagedCallersOnly]
+    private static void OnAutoOffFired(IntPtr self, IntPtr cmd)
+    {
+        if (!_isActive) return;
+        _schedule.OnFired(DateTime.Now);
+        Toggle(isAuto: true);
+    }
+
+    [UnmanagedCallersOnly]
+    private static void OnSlot1Pressed(IntPtr self, IntPtr cmd)
+    {
+        _schedule.Cycle(_schedule.Slot1, DateTime.Now);
+        RefreshScheduleMenu();
+    }
+
+    [UnmanagedCallersOnly]
+    private static void OnSlot2Pressed(IntPtr self, IntPtr cmd)
+    {
+        _schedule.Cycle(_schedule.Slot2, DateTime.Now);
+        RefreshScheduleMenu();
+    }
+
+    [UnmanagedCallersOnly]
+    private static void OnCancelSchedulePressed(IntPtr self, IntPtr cmd)
+    {
+        _schedule.Cancel();
+        RefreshScheduleMenu();
+    }
+
+    // NSWorkspace session-unlock + power-resume both route here. Re-arm
+    // NeverAway iff the last off was auto (not manual).
+    [UnmanagedCallersOnly]
+    private static void OnWakeOrUnlock(IntPtr self, IntPtr cmd, IntPtr notification)
+    {
+        if (_isActive || _schedule.Cause != OffCause.Auto) return;
+        Toggle(isAuto: false);
     }
 
     [UnmanagedCallersOnly]
@@ -129,17 +201,29 @@ internal static class Program
         // The Objective-C runtime needs a real class with selectors --
         // can't dispatch [target action:] to a raw function pointer.
         var actionClass = objc_allocateClassPair(Cls("NSObject"), "NeverAwayActionTarget", 0);
-        IntPtr togglePtr, quitPtr;
+        IntPtr togglePtr, quitPtr, slot1Ptr, slot2Ptr, cancelPtr, autoOffPtr, wakePtr;
         unsafe
         {
-            togglePtr = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OnTogglePressed;
-            quitPtr = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OnQuitPressed;
+            togglePtr  = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OnTogglePressed;
+            quitPtr    = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OnQuitPressed;
+            slot1Ptr   = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OnSlot1Pressed;
+            slot2Ptr   = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OnSlot2Pressed;
+            cancelPtr  = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OnCancelSchedulePressed;
+            autoOffPtr = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OnAutoOffFired;
+            wakePtr    = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, IntPtr, void>)&OnWakeOrUnlock;
         }
         // type encoding "v@:@" = void return, self (id), cmd (SEL), one id arg
-        class_addMethod(actionClass, Sel("toggle:"), togglePtr, "v@:@");
-        class_addMethod(actionClass, Sel("quit:"), quitPtr, "v@:@");
+        // wake selector takes (id)notification, hence the same v@:@ signature.
+        class_addMethod(actionClass, Sel("toggle:"),         togglePtr,  "v@:@");
+        class_addMethod(actionClass, Sel("quit:"),           quitPtr,    "v@:@");
+        class_addMethod(actionClass, Sel("slot1:"),          slot1Ptr,   "v@:@");
+        class_addMethod(actionClass, Sel("slot2:"),          slot2Ptr,   "v@:@");
+        class_addMethod(actionClass, Sel("cancelSchedule:"), cancelPtr,  "v@:@");
+        class_addMethod(actionClass, Sel("autoOff:"),        autoOffPtr, "v@:@");
+        class_addMethod(actionClass, Sel("wakeOrUnlock:"),   wakePtr,    "v@:@");
         objc_registerClassPair(actionClass);
-        var actionTarget = Msg(Msg(actionClass, Sel("alloc")), Sel("init"));
+        _actionTarget = Msg(Msg(actionClass, Sel("alloc")), Sel("init"));
+        var actionTarget = _actionTarget;
 
         // NSApplication.sharedApplication, set as Accessory (menu-bar only)
         var app = Msg(Cls("NSApplication"), Sel("sharedApplication"));
@@ -147,12 +231,12 @@ internal static class Program
 
         // Status item with variable length, icon as title (see IconActive/IconInactive)
         var statusBar = Msg(Cls("NSStatusBar"), Sel("systemStatusBar"));
-        var statusItem = MsgD(statusBar, Sel("statusItemWithLength:"), -1.0); // NSVariableStatusItemLength
-        _statusButton = Msg(statusItem, Sel("button"));
+        _statusItem = MsgD(statusBar, Sel("statusItemWithLength:"), -1.0); // NSVariableStatusItemLength
+        _statusButton = Msg(_statusItem, Sel("button"));
         Msg(_statusButton, Sel("setTitle:"), NSString(IconActive));
         Msg(_statusButton, Sel("setToolTip:"), NSString("NeverAway"));
 
-        // Menu: Pause / -- / Quit
+        // Menu: Pause / -- / Slot1 / Slot2 / -- / Cancel scheduled auto-off / -- / Quit
         var menu = Msg(Msg(Cls("NSMenu"), Sel("alloc")), Sel("init"));
 
         var pauseItem = Msg(Msg(Cls("NSMenuItem"), Sel("alloc")), Sel("init"));
@@ -164,13 +248,49 @@ internal static class Program
 
         Msg(menu, Sel("addItem:"), Msg(Cls("NSMenuItem"), Sel("separatorItem")));
 
+        _slot1Item = Msg(Msg(Cls("NSMenuItem"), Sel("alloc")), Sel("init"));
+        Msg(_slot1Item, Sel("setAction:"), Sel("slot1:"));
+        Msg(_slot1Item, Sel("setTarget:"), actionTarget);
+        Msg(menu, Sel("addItem:"), _slot1Item);
+
+        _slot2Item = Msg(Msg(Cls("NSMenuItem"), Sel("alloc")), Sel("init"));
+        Msg(_slot2Item, Sel("setAction:"), Sel("slot2:"));
+        Msg(_slot2Item, Sel("setTarget:"), actionTarget);
+        Msg(menu, Sel("addItem:"), _slot2Item);
+
+        Msg(menu, Sel("addItem:"), Msg(Cls("NSMenuItem"), Sel("separatorItem")));
+
+        _cancelScheduleItem = Msg(Msg(Cls("NSMenuItem"), Sel("alloc")), Sel("init"));
+        Msg(_cancelScheduleItem, Sel("setTitle:"), NSString("Cancel scheduled auto-off"));
+        Msg(_cancelScheduleItem, Sel("setAction:"), Sel("cancelSchedule:"));
+        Msg(_cancelScheduleItem, Sel("setTarget:"), actionTarget);
+        Msg(_cancelScheduleItem, Sel("setHidden:"), (IntPtr)1);
+        Msg(menu, Sel("addItem:"), _cancelScheduleItem);
+
+        Msg(menu, Sel("addItem:"), Msg(Cls("NSMenuItem"), Sel("separatorItem")));
+
         var quitItem = Msg(Msg(Cls("NSMenuItem"), Sel("alloc")), Sel("init"));
         Msg(quitItem, Sel("setTitle:"), NSString("Quit NeverAway"));
         Msg(quitItem, Sel("setAction:"), Sel("quit:"));
         Msg(quitItem, Sel("setTarget:"), actionTarget);
         Msg(menu, Sel("addItem:"), quitItem);
 
-        Msg(statusItem, Sel("setMenu:"), menu);
+        Msg(_statusItem, Sel("setMenu:"), menu);
+
+        // Subscribe to NSWorkspace notifications for auto-on re-arm:
+        //   NSWorkspaceSessionDidBecomeActiveNotification -- session unlock
+        //   NSWorkspaceDidWakeNotification -- system wake from sleep
+        var workspace = Msg(Cls("NSWorkspace"), Sel("sharedWorkspace"));
+        var wsCenter = Msg(workspace, Sel("notificationCenter"));
+        var wakeSel = Sel("wakeOrUnlock:");
+        Msg(wsCenter, Sel("addObserver:selector:name:object:"),
+            actionTarget, wakeSel,
+            NSString("NSWorkspaceSessionDidBecomeActiveNotification"), IntPtr.Zero);
+        Msg(wsCenter, Sel("addObserver:selector:name:object:"),
+            actionTarget, wakeSel,
+            NSString("NSWorkspaceDidWakeNotification"), IntPtr.Zero);
+
+        RefreshScheduleMenu();
 
         // Tap loop on threadpool. CGEvent posting is thread-safe.
         // Stored in static _sim so the toggle handler can call
@@ -185,6 +305,16 @@ internal static class Program
                 {
                     try { sim.Tap(); }
                     catch { /* one bad tap shouldn't kill the loop */ }
+
+                    // Schedule check: if the auto-off slot has fired, marshal
+                    // the toggle onto the main thread (menu / status-bar
+                    // updates aren't thread-safe).
+                    if (_schedule.ShouldFire(DateTime.Now) && _actionTarget != IntPtr.Zero)
+                    {
+                        MsgPerformOnMain(_actionTarget,
+                            Sel("performSelectorOnMainThread:withObject:waitUntilDone:"),
+                            Sel("autoOff:"), IntPtr.Zero, 0);
+                    }
                 }
                 await Task.Delay(TimeSpan.FromSeconds(10));
             }
@@ -193,4 +323,69 @@ internal static class Program
         // Run the main runloop -- blocks until terminate:
         Msg(app, Sel("run"));
     }
+
+    // ----- Schedule menu helpers (mirror of Windows TrayApp.RefreshScheduleMenu) -----
+
+    private static void RefreshScheduleMenu()
+    {
+        if (_slot1Item != IntPtr.Zero)
+        {
+            Msg(_slot1Item, Sel("setTitle:"), NSString(LabelFor(_schedule.Slot1)));
+            MsgVL(_slot1Item, Sel("setState:"), StateValueFor(_schedule.Slot1));
+        }
+        if (_slot2Item != IntPtr.Zero)
+        {
+            Msg(_slot2Item, Sel("setTitle:"), NSString(LabelFor(_schedule.Slot2)));
+            MsgVL(_slot2Item, Sel("setState:"), StateValueFor(_schedule.Slot2));
+        }
+        if (_cancelScheduleItem != IntPtr.Zero)
+        {
+            byte hidden = _schedule.ActiveSlot is null ? (byte)1 : (byte)0;
+            MsgB(_cancelScheduleItem, Sel("setHidden:"), hidden);
+        }
+        UpdateTooltip();
+    }
+
+    private static void UpdateTooltip()
+    {
+        if (_statusButton == IntPtr.Zero) return;
+        string tip;
+        if (!_isActive)
+            tip = "NeverAway is off.";
+        else if (_schedule.FireAt is { } t)
+            tip = $"NeverAway is on. Auto-off at {t.ToString("h:mm tt", CultureInfo.InvariantCulture)}.";
+        else
+            tip = "NeverAway is on.";
+        Msg(_statusButton, Sel("setToolTip:"), NSString(tip));
+    }
+
+    private static string LabelFor(Slot slot)
+    {
+        var baseLabel = slot.Kind == SlotKind.Duration
+            ? FormatDuration(slot.Value)
+            : $"Auto-off at {DateTime.Today.Add(slot.Value).ToString("h:mm tt", CultureInfo.InvariantCulture)}";
+
+        return slot.Mode switch
+        {
+            SlotMode.Once  => $"{baseLabel} (once)",
+            SlotMode.Daily => $"Auto-off daily at {DateTime.Today.Add(slot.Value).ToString("h:mm tt", CultureInfo.InvariantCulture)}",
+            _              => baseLabel,
+        };
+    }
+
+    private static string FormatDuration(TimeSpan ts)
+    {
+        var hours = (int)ts.TotalHours;
+        var minutes = ts.Minutes;
+        if (hours > 0 && minutes > 0) return $"Auto-off in {hours}h {minutes}m";
+        if (hours > 0)                return $"Auto-off in {hours} hour{(hours == 1 ? "" : "s")}";
+        return $"Auto-off in {minutes} minute{(minutes == 1 ? "" : "s")}";
+    }
+
+    private static long StateValueFor(Slot slot) => slot.Mode switch
+    {
+        SlotMode.Once  => NSControlStateOn,
+        SlotMode.Daily => NSControlStateMixed, // visually bolder than a check (mirrors Windows Indeterminate)
+        _              => NSControlStateOff,
+    };
 }
