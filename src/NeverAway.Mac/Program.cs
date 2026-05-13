@@ -15,6 +15,7 @@ internal static class Program
     private const string LibSystem = "/usr/lib/libSystem.dylib";
     private const string AppKitPath = "/System/Library/Frameworks/AppKit.framework/AppKit";
     private const string AppServicesPath = "/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices";
+    private const string IOKitPath = "/System/Library/Frameworks/IOKit.framework/IOKit";
 
     [DllImport(LibSystem)] private static extern IntPtr dlopen(string path, int mode);
     private const int RTLD_NOW = 2;
@@ -92,6 +93,8 @@ internal static class Program
             throw new InvalidOperationException($"failed to dlopen {AppKitPath}");
         if (dlopen(AppServicesPath, RTLD_NOW) == IntPtr.Zero)
             throw new InvalidOperationException($"failed to dlopen {AppServicesPath}");
+        if (dlopen(IOKitPath, RTLD_NOW) == IntPtr.Zero)
+            throw new InvalidOperationException($"failed to dlopen {IOKitPath}");
 
         // Trigger the macOS Accessibility permission prompt at startup
         // instead of waiting for the first CGEventPost (which silently fails
