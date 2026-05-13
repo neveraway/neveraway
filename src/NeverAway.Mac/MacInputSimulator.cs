@@ -92,6 +92,9 @@ public sealed class MacInputSimulator : IInputSimulator
     [DllImport(IOKit)]
     private static extern int IOPMAssertionDeclareUserActivity(IntPtr name, int userType, ref uint assertionId);
 
+    [DllImport(IOKit)]
+    private static extern int IOPMAssertionRelease(uint assertionId);
+
     // --- Persistent state for the IOPM assertions ---
 
     private static IntPtr _appName;
@@ -106,16 +109,43 @@ public sealed class MacInputSimulator : IInputSimulator
     {
         if (_persistentReady) return;
 
-        _appName = CFStringCreateWithCString(IntPtr.Zero, "NeverAway", CFStringEncodingUTF8);
-        _displaySleepType = CFStringCreateWithCString(IntPtr.Zero, "PreventUserIdleDisplaySleep", CFStringEncodingUTF8);
-        _systemSleepType = CFStringCreateWithCString(IntPtr.Zero, "PreventUserIdleSystemSleep", CFStringEncodingUTF8);
+        if (_appName == IntPtr.Zero)
+            _appName = CFStringCreateWithCString(IntPtr.Zero, "NeverAway", CFStringEncodingUTF8);
+        if (_displaySleepType == IntPtr.Zero)
+            _displaySleepType = CFStringCreateWithCString(IntPtr.Zero, "PreventUserIdleDisplaySleep", CFStringEncodingUTF8);
+        if (_systemSleepType == IntPtr.Zero)
+            _systemSleepType = CFStringCreateWithCString(IntPtr.Zero, "PreventUserIdleSystemSleep", CFStringEncodingUTF8);
 
-        // Held for app lifetime. Visible in `pmset -g assertions`. Non-fatal
-        // if either fails -- the mouse-jiggle layer below still functions.
+        // Held while NeverAway is active. Released by Pause() so paused state
+        // lets the machine behave normally (display sleep, screen lock fire).
+        // Re-created on Resume by the next Tap().
         IOPMAssertionCreateWithName(_displaySleepType, IOPMAssertionLevelOn, _appName, out _displaySleepAssertion);
         IOPMAssertionCreateWithName(_systemSleepType, IOPMAssertionLevelOn, _appName, out _systemSleepAssertion);
 
         _persistentReady = true;
+    }
+
+    // Release all held assertions. Called when NeverAway is paused so the
+    // OS resumes normal idle behavior (display sleep, screen lock can fire
+    // again). Next Tap() will re-create them via EnsurePersistentAssertions().
+    public void ReleaseAllAssertions()
+    {
+        if (_displaySleepAssertion != 0)
+        {
+            IOPMAssertionRelease(_displaySleepAssertion);
+            _displaySleepAssertion = 0;
+        }
+        if (_systemSleepAssertion != 0)
+        {
+            IOPMAssertionRelease(_systemSleepAssertion);
+            _systemSleepAssertion = 0;
+        }
+        if (_userActiveAssertion != 0)
+        {
+            IOPMAssertionRelease(_userActiveAssertion);
+            _userActiveAssertion = 0;
+        }
+        _persistentReady = false;
     }
 
     public void Tap()

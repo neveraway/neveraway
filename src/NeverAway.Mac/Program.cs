@@ -60,6 +60,7 @@ internal static class Program
     private static volatile bool _isActive = true;
     private static IntPtr _toggleItem;
     private static IntPtr _statusButton;
+    private static MacInputSimulator? _sim;
 
     // Match the Windows tray's deliberate icon choice:
     //   active   = SystemIcons.Error (red alert)        -> "no entry" ⛔
@@ -75,6 +76,11 @@ internal static class Program
             Msg(_toggleItem, Sel("setTitle:"), NSString(_isActive ? "Pause" : "Resume"));
         if (_statusButton != IntPtr.Zero)
             Msg(_statusButton, Sel("setTitle:"), NSString(_isActive ? IconActive : IconInactive));
+        // On Pause, release IOPM assertions so the OS resumes normal idle
+        // behavior (display sleep, screen lock can fire). On Resume, the
+        // next Tap() re-creates them via EnsurePersistentAssertions().
+        if (!_isActive)
+            _sim?.ReleaseAllAssertions();
     }
 
     [UnmanagedCallersOnly]
@@ -167,7 +173,10 @@ internal static class Program
         Msg(statusItem, Sel("setMenu:"), menu);
 
         // Tap loop on threadpool. CGEvent posting is thread-safe.
-        var sim = new MacInputSimulator();
+        // Stored in static _sim so the toggle handler can call
+        // ReleaseAllAssertions() when paused.
+        _sim = new MacInputSimulator();
+        var sim = _sim;
         _ = Task.Run(async () =>
         {
             while (true)
