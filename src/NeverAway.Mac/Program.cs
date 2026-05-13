@@ -96,17 +96,28 @@ internal static class Program
         if (dlopen(IOKitPath, RTLD_NOW) == IntPtr.Zero)
             throw new InvalidOperationException($"failed to dlopen {IOKitPath}");
 
-        // Trigger the macOS Accessibility permission prompt at startup
-        // instead of waiting for the first CGEventPost (which silently fails
-        // when not granted -- no auto-prompt, unlike osascript). Builds
-        // [NSDictionary dictionaryWithObject:@YES forKey:@"AXTrustedCheckOptionPrompt"]
-        // and passes it to AXIsProcessTrustedWithOptions.
+        // Trigger the macOS Accessibility permission prompt at startup --
+        // but only if we're actually untrusted. The naive single-call
+        // AXIsProcessTrustedWithOptions(prompt:YES) approach fires the
+        // prompt on every launch for ad-hoc-signed bundles even when
+        // System Settings shows the toggle as already on (Apple API
+        // quirk or trust-DB race on first launch). Two-step: check
+        // without prompting first; only prompt if the silent check
+        // returns false. Avoids the every-launch prompt UX while still
+        // surfacing the dialog on truly-first-grant.
         var promptKey = NSString("AXTrustedCheckOptionPrompt");
-        var trueVal = MsgB(Cls("NSNumber"), Sel("numberWithBool:"), 1);
-        var options = Msg(Cls("NSDictionary"), Sel("dictionaryWithObject:forKey:"), trueVal, promptKey);
-        AXIsProcessTrustedWithOptions(options);
-        // Return value intentionally ignored. If user grants, future taps work.
-        // If user dismisses, taps silently fail until they re-launch and grant.
+        var falseVal = MsgB(Cls("NSNumber"), Sel("numberWithBool:"), 0);
+        var silentCheckOptions = Msg(Cls("NSDictionary"), Sel("dictionaryWithObject:forKey:"), falseVal, promptKey);
+        bool alreadyTrusted = AXIsProcessTrustedWithOptions(silentCheckOptions);
+        if (!alreadyTrusted)
+        {
+            var trueVal = MsgB(Cls("NSNumber"), Sel("numberWithBool:"), 1);
+            var promptOptions = Msg(Cls("NSDictionary"), Sel("dictionaryWithObject:forKey:"), trueVal, promptKey);
+            AXIsProcessTrustedWithOptions(promptOptions);
+            // Return value intentionally ignored. If user grants, future taps
+            // work. If user dismisses, taps silently fail until they re-launch
+            // and grant.
+        }
 
         // Custom NSObject subclass to host the menu-action callbacks.
         // The Objective-C runtime needs a real class with selectors --
