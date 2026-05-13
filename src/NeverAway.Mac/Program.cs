@@ -40,6 +40,20 @@ internal static class Program
     [DllImport(LibObjC, EntryPoint = "objc_msgSend")] private static extern IntPtr MsgB(IntPtr o, IntPtr s, byte b);
     // performSelectorOnMainThread:withObject:waitUntilDone: -- last arg is BOOL (byte).
     [DllImport(LibObjC, EntryPoint = "objc_msgSend")] private static extern void MsgPerformOnMain(IntPtr o, IntPtr s, IntPtr a, IntPtr b, byte c);
+    // initWithFrame: / setFrame: -- takes a CGRect by value.
+    [DllImport(LibObjC, EntryPoint = "objc_msgSend")] private static extern IntPtr MsgRect(IntPtr o, IntPtr s, CGRect r);
+    // runModal -- returns NSInteger (long).
+    [DllImport(LibObjC, EntryPoint = "objc_msgSend")] private static extern long MsgRetL(IntPtr o, IntPtr s);
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct CGSize { public double Width; public double Height; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct CGRect
+    {
+        public double X, Y, Width, Height;
+        public CGRect(double x, double y, double w, double h) { X = x; Y = y; Width = w; Height = h; }
+    }
 
     // Accessibility check + auto-prompt. Documented in <ApplicationServices/AXUIElement.h>.
     // Pass a CFDictionary with kAXTrustedCheckOptionPrompt=YES to fire the system prompt
@@ -156,6 +170,96 @@ internal static class Program
         RefreshScheduleMenu();
     }
 
+    // Configure dialog: NSAlert with accessoryView containing two labeled
+    // text fields, one per slot. Slot 1 (Duration): minutes value. Slot 2
+    // (Absolute): HH:MM time-of-day. Kind is fixed per slot to match the
+    // Windows defaults; phase 3 could add Kind switching.
+    [UnmanagedCallersOnly]
+    private static void OnConfigurePressed(IntPtr self, IntPtr cmd)
+    {
+        var alert = Msg(Msg(Cls("NSAlert"), Sel("alloc")), Sel("init"));
+        Msg(alert, Sel("setMessageText:"), NSString("Configure auto-off"));
+        Msg(alert, Sel("setInformativeText:"),
+            NSString("Slot 1: total minutes to count down (Duration).\nSlot 2: time of day to fire at, HH:MM 24-hr (Absolute)."));
+        Msg(alert, Sel("addButtonWithTitle:"), NSString("Save"));
+        Msg(alert, Sel("addButtonWithTitle:"), NSString("Cancel"));
+
+        // Accessory view: 320x80 with two label+field pairs stacked vertically
+        var accessory = MsgRect(Msg(Cls("NSView"), Sel("alloc")), Sel("initWithFrame:"),
+            new CGRect(0, 0, 320, 80));
+
+        IntPtr slot1Label = CreateLabel("Slot 1 (minutes):", new CGRect(0, 50, 130, 22));
+        IntPtr slot1Field = CreateTextField(
+            ((int)_schedule.Slot1.Value.TotalMinutes).ToString(CultureInfo.InvariantCulture),
+            new CGRect(140, 50, 80, 22));
+
+        IntPtr slot2Label = CreateLabel("Slot 2 (HH:MM):", new CGRect(0, 10, 130, 22));
+        IntPtr slot2Field = CreateTextField(
+            $"{_schedule.Slot2.Value.Hours:D2}:{_schedule.Slot2.Value.Minutes:D2}",
+            new CGRect(140, 10, 80, 22));
+
+        Msg(accessory, Sel("addSubview:"), slot1Label);
+        Msg(accessory, Sel("addSubview:"), slot1Field);
+        Msg(accessory, Sel("addSubview:"), slot2Label);
+        Msg(accessory, Sel("addSubview:"), slot2Field);
+
+        Msg(alert, Sel("setAccessoryView:"), accessory);
+
+        long response = MsgRetL(alert, Sel("runModal"));
+        // NSAlertFirstButtonReturn = 1000 (Save), NSAlertSecondButtonReturn = 1001 (Cancel)
+        if (response != 1000) return;
+
+        var slot1Text = GetTextFieldString(slot1Field);
+        var slot2Text = GetTextFieldString(slot2Field);
+
+        if (int.TryParse(slot1Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int min1) && min1 > 0)
+            _schedule.Slot1.Value = TimeSpan.FromMinutes(min1);
+
+        if (TimeSpan.TryParseExact(slot2Text, @"h\:mm", CultureInfo.InvariantCulture, out TimeSpan tod1)
+            || TimeSpan.TryParseExact(slot2Text, @"hh\:mm", CultureInfo.InvariantCulture, out tod1))
+        {
+            // Normalize to a 0-23:59 time-of-day. anything outside that range
+            // is invalid -- silently ignore (user can re-open).
+            if (tod1 >= TimeSpan.Zero && tod1 < TimeSpan.FromDays(1))
+                _schedule.Slot2.Value = tod1;
+        }
+
+        _schedule.Recompute(DateTime.Now);
+        RefreshScheduleMenu();
+    }
+
+    // Helpers for the Configure accessory view.
+
+    private static IntPtr CreateLabel(string text, CGRect frame)
+    {
+        var tf = MsgRect(Msg(Cls("NSTextField"), Sel("alloc")), Sel("initWithFrame:"), frame);
+        Msg(tf, Sel("setStringValue:"), NSString(text));
+        // Configure as a read-only label: not editable, not selectable, no
+        // bezel, no draws-background. mirrors [NSTextField labelWithString:]
+        // on macOS 10.12+ but with explicit calls (no convenience class
+        // method needed via P/Invoke).
+        MsgB(tf, Sel("setEditable:"), 0);
+        MsgB(tf, Sel("setSelectable:"), 0);
+        MsgB(tf, Sel("setBezeled:"), 0);
+        MsgB(tf, Sel("setDrawsBackground:"), 0);
+        return tf;
+    }
+
+    private static IntPtr CreateTextField(string initialValue, CGRect frame)
+    {
+        var tf = MsgRect(Msg(Cls("NSTextField"), Sel("alloc")), Sel("initWithFrame:"), frame);
+        Msg(tf, Sel("setStringValue:"), NSString(initialValue));
+        return tf;
+    }
+
+    private static string GetTextFieldString(IntPtr tf)
+    {
+        var nsstr = Msg(tf, Sel("stringValue"));
+        if (nsstr == IntPtr.Zero) return string.Empty;
+        var utf8Ptr = Msg(nsstr, Sel("UTF8String"));
+        return Marshal.PtrToStringUTF8(utf8Ptr) ?? string.Empty;
+    }
+
     // NSWorkspace session-unlock + power-resume both route here. Re-arm
     // NeverAway iff the last off was auto (not manual).
     [UnmanagedCallersOnly]
@@ -211,7 +315,7 @@ internal static class Program
         // The Objective-C runtime needs a real class with selectors --
         // can't dispatch [target action:] to a raw function pointer.
         var actionClass = objc_allocateClassPair(Cls("NSObject"), "NeverAwayActionTarget", 0);
-        IntPtr togglePtr, quitPtr, slot1Ptr, slot2Ptr, cancelPtr, autoOffPtr, wakePtr;
+        IntPtr togglePtr, quitPtr, slot1Ptr, slot2Ptr, cancelPtr, configPtr, autoOffPtr, wakePtr;
         unsafe
         {
             togglePtr  = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OnTogglePressed;
@@ -219,6 +323,7 @@ internal static class Program
             slot1Ptr   = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OnSlot1Pressed;
             slot2Ptr   = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OnSlot2Pressed;
             cancelPtr  = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OnCancelSchedulePressed;
+            configPtr  = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OnConfigurePressed;
             autoOffPtr = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OnAutoOffFired;
             wakePtr    = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, IntPtr, void>)&OnWakeOrUnlock;
         }
@@ -229,6 +334,7 @@ internal static class Program
         class_addMethod(actionClass, Sel("slot1:"),          slot1Ptr,   "v@:@");
         class_addMethod(actionClass, Sel("slot2:"),          slot2Ptr,   "v@:@");
         class_addMethod(actionClass, Sel("cancelSchedule:"), cancelPtr,  "v@:@");
+        class_addMethod(actionClass, Sel("configure:"),      configPtr,  "v@:@");
         class_addMethod(actionClass, Sel("autoOff:"),        autoOffPtr, "v@:@");
         class_addMethod(actionClass, Sel("wakeOrUnlock:"),   wakePtr,    "v@:@");
         objc_registerClassPair(actionClass);
@@ -267,6 +373,12 @@ internal static class Program
         Msg(_slot2Item, Sel("setAction:"), Sel("slot2:"));
         Msg(_slot2Item, Sel("setTarget:"), actionTarget);
         Msg(menu, Sel("addItem:"), _slot2Item);
+
+        var configureItem = Msg(Msg(Cls("NSMenuItem"), Sel("alloc")), Sel("init"));
+        Msg(configureItem, Sel("setTitle:"), NSString("Configure auto-off..."));
+        Msg(configureItem, Sel("setAction:"), Sel("configure:"));
+        Msg(configureItem, Sel("setTarget:"), actionTarget);
+        Msg(menu, Sel("addItem:"), configureItem);
 
         Msg(menu, Sel("addItem:"), Msg(Cls("NSMenuItem"), Sel("separatorItem")));
 
