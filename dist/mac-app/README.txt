@@ -4,10 +4,10 @@ NeverAway -- macOS menu bar app (Apple Silicon)
 What this does
 --------------
 Sits in your menu bar (top-right of the screen, near the clock /
-wifi / battery widgets) and sends a fake F19 keypress every 10
-seconds so Teams / Slack / similar apps don't show you as "Away".
-F19 isn't on any modern Mac keyboard and has no system mapping,
-so you won't see or feel anything.
+wifi / battery widgets) and posts a zero-pixel mouse-move event
+every 10 seconds so Teams / Slack / similar apps don't show you
+as "Away" and the screen doesn't lock. The cursor doesn't actually
+move (delta is zero), so you won't see or feel anything.
 
 How to run
 ----------
@@ -46,7 +46,7 @@ How to run
        Pause       toggle on/off (icon flips to a shield 🛡 when paused)
        Quit NeverAway
 
-5. The first time NeverAway taps a key (within ~10s of launch),
+5. The first time NeverAway fires a tap (within ~10s of launch),
    macOS will show an Accessibility permission prompt:
 
        "NeverAway wants to control your computer using
