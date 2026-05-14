@@ -14,36 +14,23 @@ How to run
 1. Drag NeverAway.app into your /Applications folder (or run it
    from wherever you unzipped it).
 
-2. First-launch gatekeeper bypass.
+2. Double-click NeverAway.app.
 
-   NeverAway is ad-hoc signed but not signed with an Apple
-   Developer ID, so on first launch macOS blocks it with
-   either "could not be verified" or "is damaged". Right-click
-   -> Open used to bypass this; it doesn't work on modern macOS
-   (Sonoma / Sequoia / later). Two ways to get past it:
-
-   Mouse-only path (Apple's intended flow):
-     a. Try to open NeverAway.app -> blocked dialog appears
-     b. Open System Settings -> Privacy & Security
-     c. Scroll down to the "Security" section
-     d. Look for "NeverAway was blocked..." with an
-        "Open Anyway" button -- click it
-     e. Confirm in the dialog
-     f. Now double-click NeverAway.app -- it'll launch
-
-   Terminal one-liner (faster if you have a terminal open):
-     xattr -dr com.apple.quarantine /path/to/NeverAway.app
-     # then double-click
-
-   Either is one-time. After first successful launch, macOS
-   remembers the user-approved decision.
+   NeverAway is signed with an Apple Developer ID certificate and
+   notarized by Apple, so gatekeeper accepts it on first launch
+   with no warning. (You may briefly see "this app is from the
+   internet, open?" -- click Open.)
 
 3. Look in your menu bar (top-right of the screen, near the
    clock / wifi / battery widgets). You should see a "no entry"
    glyph (⛔) -- NeverAway is running.
 
 4. Click the icon for the menu:
-       Pause       toggle on/off (icon flips to a shield 🛡 when paused)
+       Pause                       toggle on/off (icon flips to a shield 🛡 when paused)
+       Auto-off in 2 hours         click to arm Slot 1 (Duration)
+       Auto-off at 6:00 PM         click to arm Slot 2 (Absolute)
+       Configure auto-off...       change the slot values
+       Cancel scheduled auto-off   visible when a slot is armed
        Quit NeverAway
 
 5. The first time NeverAway fires a tap (within ~10s of launch),
@@ -59,5 +46,17 @@ How to run
 That's it. Quit via the menu, or it'll keep running until you
 log out / shut down. To start automatically at login, drag
 NeverAway.app into System Settings -> General -> Login Items.
+
+Verifying the signature
+-----------------------
+If you want to confirm the binary is the one we shipped:
+
+    codesign -dvv /Applications/NeverAway.app
+
+Look for:
+    Authority=Developer ID Application: Roy Ashbrook (44Y2L8A2CV)
+    Authority=Developer ID Certification Authority
+    Authority=Apple Root CA
+    Notarization Ticket=stapled
 
 Source / issues: https://github.com/neveraway/neveraway
