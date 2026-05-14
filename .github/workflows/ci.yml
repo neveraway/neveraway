@@ -22,12 +22,19 @@ jobs:
       - name: dotnet test
         run: dotnet test tests/NeverAway.Core.Tests/NeverAway.Core.Tests.csproj -c Release --logger "console;verbosity=normal"
 
-  # NeverAway.app bundle build is on macos-latest specifically because
-  # we need `codesign` to re-sign the assembled bundle. dotnet's cross-
-  # publish from Linux ad-hoc signs the binary BEFORE bundle assembly,
-  # so the bundle's Info.plist isn't sealed to the signature -- macOS
-  # then refuses to launch with a "damaged" error. Re-signing the whole
-  # bundle on macOS produces a valid ad-hoc signature gatekeeper accepts.
+  # NeverAway.app bundle build is on macos-latest because we need
+  # `codesign` + `xcrun notarytool` + `xcrun stapler` to sign + notarize
+  # the bundle. With Developer ID signing wired up, gatekeeper accepts
+  # the .app on first launch without any "could not be verified"
+  # warning.
+  #
+  # Requires 5 repo secrets to be set; without them, the workflow falls
+  # back to ad-hoc signing (current behavior, gatekeeper warns):
+  #   APPLE_DEV_ID_CERT_P12          -- base64 of the Developer ID Application .p12
+  #   APPLE_DEV_ID_CERT_PWD          -- the .p12's password
+  #   APPLE_ID                       -- Apple ID email (for notarytool)
+  #   APPLE_APP_SPECIFIC_PASSWORD    -- app-specific password from appleid.apple.com
+  #   APPLE_TEAM_ID                  -- 10-char Team ID (visible in dev portal Membership)
   build-mac-app:
     runs-on: macos-latest
     steps:
@@ -35,21 +42,101 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
+
       - name: dotnet publish (NeverAway.Mac, osx-arm64 single-file)
         run: dotnet publish src/NeverAway.Mac/NeverAway.Mac.csproj -c Release -o publish/mac-binary
-      - name: assemble NeverAway.app bundle + ad-hoc codesign
+
+      # Assemble bundle + codesign. Two paths gated on whether the
+      # APPLE_DEV_ID_CERT_P12 secret is set:
+      #   - present: import cert into temp keychain, sign with Developer
+      #     ID Application + hardened runtime + secure timestamp.
+      #   - absent: ad-hoc sign (v3.0.0 / v3.1.0 behavior). Gatekeeper
+      #     warns on first launch. Set the APPLE_* secrets to enable
+      #     the Developer ID path.
+      - name: assemble NeverAway.app bundle + codesign
+        env:
+          CERT_P12_B64: ${{ secrets.APPLE_DEV_ID_CERT_P12 }}
+          CERT_PWD: ${{ secrets.APPLE_DEV_ID_CERT_PWD }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           APP=publish/mac-app/NeverAway.app
           mkdir -p $APP/Contents/MacOS
           cp src/NeverAway.Mac/Info.plist $APP/Contents/Info.plist
           cp publish/mac-binary/neveraway $APP/Contents/MacOS/neveraway
           chmod +x $APP/Contents/MacOS/neveraway
-          # --force overwrites the binary's inner adhoc sig with one that
-          # covers the whole bundle (Info.plist + Contents/* sealed).
-          # --deep recursively signs nested binaries.
-          codesign --force --deep --sign - $APP
-          codesign --verify --strict $APP
+
+          if [ -n "$CERT_P12_B64" ]; then
+            echo "::group::Developer ID signing path"
+            # Temp keychain holds the cert just for this build.
+            KC_PATH="$RUNNER_TEMP/build.keychain-db"
+            KC_PWD=$(uuidgen)
+            security create-keychain -p "$KC_PWD" "$KC_PATH"
+            security set-keychain-settings -lut 21600 "$KC_PATH"
+            security unlock-keychain -p "$KC_PWD" "$KC_PATH"
+
+            echo "$CERT_P12_B64" | base64 -d > "$RUNNER_TEMP/cert.p12"
+            security import "$RUNNER_TEMP/cert.p12" -P "$CERT_PWD" -k "$KC_PATH" -T /usr/bin/codesign
+            rm "$RUNNER_TEMP/cert.p12"
+
+            # Add temp keychain to search list so codesign + xcrun find the cert.
+            security list-keychain -d user -s "$KC_PATH" $(security list-keychains -d user | sed s/\"//g)
+            # Allow codesign to use the private key without an interactive prompt.
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PWD" "$KC_PATH" >/dev/null
+
+            # Resolve the cert identity by team ID -- avoids hardcoding the CN.
+            IDENTITY=$(security find-identity -v -p codesigning "$KC_PATH" | \
+              awk -v team="($TEAM_ID)" '/Developer ID Application/ && index($0,team) {print $2; exit}')
+            if [ -z "$IDENTITY" ]; then
+              echo "ERROR: could not find Developer ID Application cert with team $TEAM_ID" >&2
+              security find-identity -v -p codesigning "$KC_PATH" >&2
+              exit 1
+            fi
+            echo "signing with identity: $IDENTITY"
+            codesign --force --deep --options runtime --timestamp \
+              --sign "$IDENTITY" "$APP"
+            echo "::endgroup::"
+          else
+            echo "::warning::No APPLE_DEV_ID_CERT_P12 secret; falling back to ad-hoc signing. Gatekeeper will warn users on first launch."
+            codesign --force --deep --sign - "$APP"
+          fi
+
+          codesign --verify --strict --verbose=2 "$APP"
           cp dist/mac-app/README.txt publish/mac-app/README.txt
+
+      # Notarize + staple. Skipped (with a warning) if signing creds
+      # aren't available. Notarization typically completes in <5 min.
+      # Stapling attaches the verdict ticket to the .app so it verifies
+      # offline (without contacting Apple at launch time).
+      - name: notarize + staple
+        env:
+          CERT_P12_B64: ${{ secrets.APPLE_DEV_ID_CERT_P12 }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -z "$CERT_P12_B64" ]; then
+            echo "::warning::No signing creds; skipping notarization."
+            exit 0
+          fi
+
+          APP=publish/mac-app/NeverAway.app
+          ZIP="$RUNNER_TEMP/notarize.zip"
+
+          # notarytool wants a flat archive of the bundle.
+          # ditto preserves the bundle structure (unlike `zip`).
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
+
+          xcrun notarytool submit "$ZIP" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --team-id "$TEAM_ID" \
+            --wait
+
+          xcrun stapler staple "$APP"
+          xcrun stapler validate "$APP"
+
+          rm "$ZIP"
+
       - uses: actions/upload-artifact@v7
         with:
           name: neveraway-mac-app
