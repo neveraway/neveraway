@@ -22,14 +22,16 @@ v3 keeps the Windows tray UX exactly as before (download `neveraway.exe`, double
 - `src/NeverAway.Windows` — Windows tray UI (Windows install path) with auto-off scheduler
 - `src/NeverAway.Mac` — macOS menu bar app (Mac install path)
 
-Per-platform key choice:
+Per-platform input simulation:
 
-| platform | key tapped | mechanism |
+| platform | event simulated | mechanism |
 |---|---|---|
-| Windows | F24 (VK 0x87) | `user32.dll keybd_event` |
-| macOS | F19 (key code 80) | `CGEventCreateKeyboardEvent` via P/Invoke |
+| Windows | F24 keystroke (VK 0x87) | `user32.dll keybd_event` |
+| macOS   | zero-pixel mouse-move + IOPM assertions | `CGEventCreateMouseEvent` + `IOPMAssertionCreateWithName` via P/Invoke |
 
-Apple's virtual key code map only defines F1–F20, so F24 has no equivalent on Mac. F19 is the highest-safe F-key — not on any modern keyboard, no default system mapping. F15 is what [Caffeine](https://www.zhornsoftware.co.uk/caffeine/) traditionally used, but on some Mac configurations macOS interprets F15 as "brightness up", so we picked higher.
+Apple's virtual key code map only defines F1–F20, so F24 has no equivalent on Mac. v3.0.0 mac used F19 keystrokes (F15 is what [Caffeine](https://www.zhornsoftware.co.uk/caffeine/) traditionally uses, but on some Mac configurations macOS interprets F15 as "brightness up", so we picked higher). v3.1.0 mac switched to zero-pixel mouse-move + IOPM assertions — synthetic keyboard events alone don't prevent screen lock on modern macOS. see [`docs/macos-lock-investigation.md`](docs/macos-lock-investigation.md) for the rabbit hole.
+
+Mac v3.1.0 also matches the Windows tray's full feature set: two-slot auto-off scheduler, Configure dialog, auto-on re-arm on unlock. defaults match Windows (Slot 1: 2h Duration, Slot 2: 6:00 PM Absolute).
 
 ### Run on macOS — menu bar app (recommended)
 
@@ -43,6 +45,17 @@ Download `NeverAway.app` from the latest release (or build it locally — see be
 Either is one-time. After first successful launch, macOS remembers the decision.
 
 **Accessibility prompt** on first Tap (~10s after launch): "NeverAway wants to control your computer using accessibility features." → Open System Settings → flip the toggle next to NeverAway in the Accessibility list → re-launch NeverAway.
+
+**Menu** (Mac v3.1.0):
+
+- **Pause / Resume** — toggle keep-awake (click ⛔, flips to 🛡 when paused)
+- **Auto-off in 2 hours** (Slot 1, Duration) — click to cycle Off ↔ Once
+- **Auto-off at 6:00 PM** (Slot 2, Absolute) — click to cycle Off → Once → Daily → Off
+- **Configure auto-off...** — opens a dialog to change slot values (minutes for Slot 1, HH:MM for Slot 2)
+- **Cancel scheduled auto-off** — appears when a slot is armed; cancels it
+- **Quit NeverAway**
+
+Auto-on: when the schedule fires (auto-off), unlocking the screen or waking the laptop re-arms NeverAway. Manual-off (clicking Pause) does *not* auto-re-arm — Resume is on you.
 
 Build locally:
 
@@ -61,19 +74,29 @@ dotnet publish src/NeverAway.Windows -c Release
 
 ### Don't want to download? One-liners
 
-If you'd rather not install anything, the same key-tap-in-a-loop fits in a CLI one-liner. Ctrl+C to stop. Same key codes as the binaries (F24 on Windows, F19 on Mac).
+If you'd rather not install anything, here are CLI one-liners that approximate the binaries. Ctrl+C to stop.
 
-**Windows (PowerShell):**
+**Windows (PowerShell)** — same F24-keystroke-in-a-loop as the binary:
 
 ```powershell
 $k=Add-Type -MemberDefinition '[DllImport("user32.dll")]public static extern void keybd_event(byte v,byte s,int f,int e);' -Name N -Namespace W -PassThru;while($true){$k::keybd_event(0x87,0,2,0);Start-Sleep 10}
 ```
 
-**macOS (bash):**
+**macOS (bash)** — `caffeinate` for the IOPM assertions + a swift mouse-move loop for the screensaver-cascade reset (matches what v3.1.0 NeverAway.app does):
+
+```bash
+caffeinate -d -i -u bash -c 'while true; do swift -e "import CoreGraphics; let p = CGEvent(source: nil)!.location; CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: p, mouseButton: .left)?.post(tap: .cghidEventTap)"; sleep 10; done'
+```
+
+ctrl-C in the terminal kills caffeinate, which kills the bash subprocess, which releases all assertions cleanly. first run will prompt for Accessibility permission on `swift`.
+
+if you only need Teams/Slack away suppression (not lock prevention), the simpler v3.0.0 form still works on mac:
 
 ```bash
 while true;do osascript -e 'tell application "System Events" to key code 80';sleep 10;done
 ```
+
+(F19 keystroke. prevents away status + display dim but **does not** prevent screen lock on modern macOS — that's the v3.0.0 bug v3.1.0 fixed.)
 
 ### Tests
 
