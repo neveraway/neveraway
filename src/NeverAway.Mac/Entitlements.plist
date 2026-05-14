@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+        Entitlements required for a .NET (CoreCLR) app running under the
+        hardened runtime. Without these, CoreCLR fails to initialize:
+            "Failed to create CoreCLR, HRESULT: 0x80070008"
+        because the JIT can't allocate executable memory pages.
+
+        com.apple.security.cs.allow-jit
+            Permits the runtime to mark pages as executable for JIT-compiled
+            code (CoreCLR's primary code-execution mechanism).
+
+        com.apple.security.cs.allow-unsigned-executable-memory
+            Permits unsigned executable memory pages. Required because the
+            JIT writes new code at runtime that wasn't part of the original
+            signed binary.
+
+        com.apple.security.cs.disable-library-validation
+            Permits loading of dynamic libraries that aren't signed by the
+            same Team ID. .NET bundles + loads its own native libs (e.g.
+            System.Native.dylib) at runtime; without this, they'd be
+            rejected by strict library validation under hardened runtime.
+
+        These are the standard set for .NET single-file apps on macOS with
+        Developer ID signing + notarization. Apple's notary service accepts
+        them.
+    -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+</dict>
+</plist>
