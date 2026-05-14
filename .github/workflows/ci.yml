@@ -92,7 +92,12 @@ jobs:
               exit 1
             fi
             echo "signing with identity: $IDENTITY"
+            # --entitlements: required for the .NET runtime to function under
+            # hardened runtime. Without allow-jit + allow-unsigned-executable-
+            # memory + disable-library-validation, CoreCLR can't initialize
+            # and the app fails on launch with HRESULT 0x80070008.
             codesign --force --deep --options runtime --timestamp \
+              --entitlements src/NeverAway.Mac/Entitlements.plist \
               --sign "$IDENTITY" "$APP"
             echo "::endgroup::"
           else
