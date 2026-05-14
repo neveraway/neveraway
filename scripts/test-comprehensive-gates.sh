@@ -63,8 +63,13 @@ events_since() {
 
 count_display_off()  { events_since "$1" "Display is turned off"; }
 count_display_on()   { events_since "$1" "Display is turned on"; }
-count_sleep_events() { events_since "$1" "Sleep "; }
-count_wake_events()  { events_since "$1" "Wake from"; }
+# system-sleep events look like:
+#   "Entered Sleep" or "Sleep due to ..." -- the standalone column 3 begins with "Sleep"
+# the prior pattern "Sleep " matched tons of unrelated lines (settings logs,
+# timer config descriptions, etc.). this regex requires Sleep as the
+# field-3 *event type* column, not just a substring anywhere.
+count_sleep_events() { events_since "$1" "^[0-9-]+ [0-9:]+ -?[0-9]+[[:space:]]+Sleep[[:space:]]"; }
+count_wake_events()  { events_since "$1" "^[0-9-]+ [0-9:]+ -?[0-9]+[[:space:]]+Wake"; }
 
 # ----- backup current settings -----
 
