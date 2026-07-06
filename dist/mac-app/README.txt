@@ -31,6 +31,7 @@ How to run
        Auto-off at 6:00 PM         click to arm Slot 2 (Absolute)
        Configure auto-off...       change the slot values
        Cancel scheduled auto-off   visible when a slot is armed
+       Start at Login              launch NeverAway when you log in
        Quit NeverAway
 
 5. The first time NeverAway fires a tap (within ~10s of launch),
@@ -44,8 +45,10 @@ How to run
    NeverAway. (One-time setup.)
 
 That's it. Quit via the menu, or it'll keep running until you
-log out / shut down. To start automatically at login, drag
-NeverAway.app into System Settings -> General -> Login Items.
+log out / shut down. To start automatically at login, click
+Start at Login in the NeverAway menu. If the item shows
+"needs approval", approve NeverAway in System Settings ->
+General -> Login Items.
 
 Verifying the signature
 -----------------------

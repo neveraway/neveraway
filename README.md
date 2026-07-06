@@ -53,6 +53,7 @@ Either is one-time. After first successful launch, macOS remembers the decision.
 - **Auto-off at 6:00 PM** (Slot 2, Absolute) — click to cycle Off → Once → Daily → Off
 - **Configure auto-off...** — opens a dialog to change slot values (minutes for Slot 1, HH:MM for Slot 2)
 - **Cancel scheduled auto-off** — appears when a slot is armed; cancels it
+- **Start at Login** — launches NeverAway automatically after you log in (macOS 13+)
 - **Quit NeverAway**
 
 Auto-on: when the schedule fires (auto-off), unlocking the screen or waking the laptop re-arms NeverAway. Manual-off (clicking Pause) does *not* auto-re-arm — Resume is on you.

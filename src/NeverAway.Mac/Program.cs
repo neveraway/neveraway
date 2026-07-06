@@ -19,6 +19,7 @@ internal static class Program
     private const string AppKitPath = "/System/Library/Frameworks/AppKit.framework/AppKit";
     private const string AppServicesPath = "/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices";
     private const string IOKitPath = "/System/Library/Frameworks/IOKit.framework/IOKit";
+    private const string ServiceManagementPath = "/System/Library/Frameworks/ServiceManagement.framework/ServiceManagement";
 
     [DllImport(LibSystem)] private static extern IntPtr dlopen(string path, int mode);
     private const int RTLD_NOW = 2;
@@ -38,6 +39,8 @@ internal static class Program
     [DllImport(LibObjC, EntryPoint = "objc_msgSend")] private static extern IntPtr MsgD(IntPtr o, IntPtr s, double a);
     [DllImport(LibObjC, EntryPoint = "objc_msgSend")] private static extern void MsgVL(IntPtr o, IntPtr s, long a);
     [DllImport(LibObjC, EntryPoint = "objc_msgSend")] private static extern IntPtr MsgB(IntPtr o, IntPtr s, byte b);
+    [DllImport(LibObjC, EntryPoint = "objc_msgSend")] [return: MarshalAs(UnmanagedType.I1)]
+    private static extern bool MsgRetB(IntPtr o, IntPtr s, IntPtr a);
     // performSelectorOnMainThread:withObject:waitUntilDone: -- last arg is BOOL (byte).
     [DllImport(LibObjC, EntryPoint = "objc_msgSend")] private static extern void MsgPerformOnMain(IntPtr o, IntPtr s, IntPtr a, IntPtr b, byte c);
     // initWithFrame: / setFrame: -- takes a CGRect by value.
@@ -56,9 +59,13 @@ internal static class Program
     }
 
     // Accessibility check + auto-prompt. Documented in <ApplicationServices/AXUIElement.h>.
+    [DllImport(AppServicesPath)]
+    [return: MarshalAs(UnmanagedType.I1)]
+    private static extern bool AXIsProcessTrusted();
+
     // Pass a CFDictionary with kAXTrustedCheckOptionPrompt=YES to fire the system prompt
     // when the process isn't yet trusted. NSDictionary is toll-free bridged to CFDictionary.
-    [DllImport("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")]
+    [DllImport(AppServicesPath)]
     [return: MarshalAs(UnmanagedType.I1)]
     private static extern bool AXIsProcessTrustedWithOptions(IntPtr options);
 
@@ -85,6 +92,7 @@ internal static class Program
     private static IntPtr _slot1Item;
     private static IntPtr _slot2Item;
     private static IntPtr _cancelScheduleItem;
+    private static IntPtr _startAtLoginItem;
     private static IntPtr _actionTarget;
     private static MacInputSimulator? _sim;
     private static readonly AutoOffSchedule _schedule = new();
@@ -99,6 +107,12 @@ internal static class Program
     private const long NSControlStateOn    = 1;
     private const long NSControlStateMixed = -1;
     private const long NSControlStateOff   = 0;
+
+    // SMAppServiceStatus enum values from ServiceManagement/SMAppService.h.
+    private const long SMAppServiceStatusNotRegistered    = 0;
+    private const long SMAppServiceStatusEnabled          = 1;
+    private const long SMAppServiceStatusRequiresApproval = 2;
+    private const long SMAppServiceStatusNotFound         = 3;
 
     // Regular method -- both menu-click and tap-loop auto-off route here.
     // Mirror of Windows TrayApp.Toggle(isAuto).
@@ -158,6 +172,17 @@ internal static class Program
     {
         _schedule.Cancel();
         RefreshScheduleMenu();
+    }
+
+    [UnmanagedCallersOnly]
+    private static void OnStartAtLoginPressed(IntPtr self, IntPtr cmd)
+    {
+        var status = StartAtLoginStatus();
+        var shouldEnable = status != SMAppServiceStatusEnabled
+            && status != SMAppServiceStatusRequiresApproval;
+
+        SetStartAtLogin(shouldEnable);
+        RefreshStartAtLoginMenu();
     }
 
     // Configure dialog: NSAlert with accessoryView containing two labeled
@@ -277,6 +302,7 @@ internal static class Program
             throw new InvalidOperationException($"failed to dlopen {AppServicesPath}");
         if (dlopen(IOKitPath, RTLD_NOW) == IntPtr.Zero)
             throw new InvalidOperationException($"failed to dlopen {IOKitPath}");
+        dlopen(ServiceManagementPath, RTLD_NOW); // Optional: SMAppService exists on macOS 13+.
 
         // Trigger the macOS Accessibility permission prompt at startup --
         // but only if we're actually untrusted. The naive single-call
@@ -287,12 +313,9 @@ internal static class Program
         // without prompting first; only prompt if the silent check
         // returns false. Avoids the every-launch prompt UX while still
         // surfacing the dialog on truly-first-grant.
-        var promptKey = NSString("AXTrustedCheckOptionPrompt");
-        var falseVal = MsgB(Cls("NSNumber"), Sel("numberWithBool:"), 0);
-        var silentCheckOptions = Msg(Cls("NSDictionary"), Sel("dictionaryWithObject:forKey:"), falseVal, promptKey);
-        bool alreadyTrusted = AXIsProcessTrustedWithOptions(silentCheckOptions);
-        if (!alreadyTrusted)
+        if (!AXIsProcessTrusted())
         {
+            var promptKey = NSString("AXTrustedCheckOptionPrompt");
             var trueVal = MsgB(Cls("NSNumber"), Sel("numberWithBool:"), 1);
             var promptOptions = Msg(Cls("NSDictionary"), Sel("dictionaryWithObject:forKey:"), trueVal, promptKey);
             AXIsProcessTrustedWithOptions(promptOptions);
@@ -305,28 +328,30 @@ internal static class Program
         // The Objective-C runtime needs a real class with selectors --
         // can't dispatch [target action:] to a raw function pointer.
         var actionClass = objc_allocateClassPair(Cls("NSObject"), "NeverAwayActionTarget", 0);
-        IntPtr togglePtr, quitPtr, slot1Ptr, slot2Ptr, cancelPtr, configPtr, autoOffPtr, wakePtr;
+        IntPtr togglePtr, quitPtr, slot1Ptr, slot2Ptr, cancelPtr, startAtLoginPtr, configPtr, autoOffPtr, wakePtr;
         unsafe
         {
-            togglePtr  = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OnTogglePressed;
-            quitPtr    = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OnQuitPressed;
-            slot1Ptr   = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OnSlot1Pressed;
-            slot2Ptr   = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OnSlot2Pressed;
-            cancelPtr  = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OnCancelSchedulePressed;
-            configPtr  = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OnConfigurePressed;
-            autoOffPtr = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OnAutoOffFired;
-            wakePtr    = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, IntPtr, void>)&OnWakeOrUnlock;
+            togglePtr       = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OnTogglePressed;
+            quitPtr         = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OnQuitPressed;
+            slot1Ptr        = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OnSlot1Pressed;
+            slot2Ptr        = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OnSlot2Pressed;
+            cancelPtr       = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OnCancelSchedulePressed;
+            startAtLoginPtr = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OnStartAtLoginPressed;
+            configPtr       = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OnConfigurePressed;
+            autoOffPtr      = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OnAutoOffFired;
+            wakePtr         = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, IntPtr, void>)&OnWakeOrUnlock;
         }
         // type encoding "v@:@" = void return, self (id), cmd (SEL), one id arg
         // wake selector takes (id)notification, hence the same v@:@ signature.
-        class_addMethod(actionClass, Sel("toggle:"),         togglePtr,  "v@:@");
-        class_addMethod(actionClass, Sel("quit:"),           quitPtr,    "v@:@");
-        class_addMethod(actionClass, Sel("slot1:"),          slot1Ptr,   "v@:@");
-        class_addMethod(actionClass, Sel("slot2:"),          slot2Ptr,   "v@:@");
-        class_addMethod(actionClass, Sel("cancelSchedule:"), cancelPtr,  "v@:@");
-        class_addMethod(actionClass, Sel("configure:"),      configPtr,  "v@:@");
-        class_addMethod(actionClass, Sel("autoOff:"),        autoOffPtr, "v@:@");
-        class_addMethod(actionClass, Sel("wakeOrUnlock:"),   wakePtr,    "v@:@");
+        class_addMethod(actionClass, Sel("toggle:"),        togglePtr,       "v@:@");
+        class_addMethod(actionClass, Sel("quit:"),          quitPtr,         "v@:@");
+        class_addMethod(actionClass, Sel("slot1:"),         slot1Ptr,        "v@:@");
+        class_addMethod(actionClass, Sel("slot2:"),         slot2Ptr,        "v@:@");
+        class_addMethod(actionClass, Sel("cancelSchedule:"), cancelPtr,      "v@:@");
+        class_addMethod(actionClass, Sel("startAtLogin:"),  startAtLoginPtr, "v@:@");
+        class_addMethod(actionClass, Sel("configure:"),     configPtr,       "v@:@");
+        class_addMethod(actionClass, Sel("autoOff:"),       autoOffPtr,      "v@:@");
+        class_addMethod(actionClass, Sel("wakeOrUnlock:"),  wakePtr,         "v@:@");
         objc_registerClassPair(actionClass);
         _actionTarget = Msg(Msg(actionClass, Sel("alloc")), Sel("init"));
         var actionTarget = _actionTarget;
@@ -378,6 +403,14 @@ internal static class Program
         Msg(_cancelScheduleItem, Sel("setTarget:"), actionTarget);
         Msg(_cancelScheduleItem, Sel("setHidden:"), (IntPtr)1);
         Msg(menu, Sel("addItem:"), _cancelScheduleItem);
+
+        Msg(menu, Sel("addItem:"), Msg(Cls("NSMenuItem"), Sel("separatorItem")));
+
+        _startAtLoginItem = Msg(Msg(Cls("NSMenuItem"), Sel("alloc")), Sel("init"));
+        Msg(_startAtLoginItem, Sel("setTitle:"), NSString("Start at Login"));
+        Msg(_startAtLoginItem, Sel("setAction:"), Sel("startAtLogin:"));
+        Msg(_startAtLoginItem, Sel("setTarget:"), actionTarget);
+        Msg(menu, Sel("addItem:"), _startAtLoginItem);
 
         Msg(menu, Sel("addItem:"), Msg(Cls("NSMenuItem"), Sel("separatorItem")));
 
@@ -468,6 +501,7 @@ internal static class Program
             MsgB(_cancelScheduleItem, Sel("setHidden:"), hidden);
         }
         UpdateTooltip();
+        RefreshStartAtLoginMenu();
     }
 
     private static void UpdateTooltip()
@@ -512,4 +546,45 @@ internal static class Program
         SlotMode.Daily => NSControlStateMixed, // visually bolder than a check (mirrors Windows Indeterminate)
         _              => NSControlStateOff,
     };
+
+    // ----- Login Items helpers (SMAppService.mainAppService, macOS 13+) -----
+
+    private static IntPtr MainAppService()
+    {
+        var cls = Cls("SMAppService");
+        return cls == IntPtr.Zero ? IntPtr.Zero : Msg(cls, Sel("mainAppService"));
+    }
+
+    private static long StartAtLoginStatus()
+    {
+        var service = MainAppService();
+        return service == IntPtr.Zero ? SMAppServiceStatusNotFound : MsgRetL(service, Sel("status"));
+    }
+
+    private static bool SetStartAtLogin(bool enabled)
+    {
+        var service = MainAppService();
+        if (service == IntPtr.Zero) return false;
+
+        var selector = enabled ? Sel("registerAndReturnError:") : Sel("unregisterAndReturnError:");
+        return MsgRetB(service, selector, IntPtr.Zero);
+    }
+
+    private static void RefreshStartAtLoginMenu()
+    {
+        if (_startAtLoginItem == IntPtr.Zero) return;
+
+        var status = StartAtLoginStatus();
+        Msg(_startAtLoginItem, Sel("setTitle:"), NSString(
+            status == SMAppServiceStatusRequiresApproval
+                ? "Start at Login (needs approval)"
+                : "Start at Login"));
+        MsgVL(_startAtLoginItem, Sel("setState:"), status switch
+        {
+            SMAppServiceStatusEnabled          => NSControlStateOn,
+            SMAppServiceStatusRequiresApproval => NSControlStateMixed,
+            _                                  => NSControlStateOff,
+        });
+        MsgB(_startAtLoginItem, Sel("setEnabled:"), status == SMAppServiceStatusNotFound ? (byte)0 : (byte)1);
+    }
 }
