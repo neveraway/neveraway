@@ -7,14 +7,20 @@ name: CI
 on:
   push:
     branches: [master]
+    tags: ['v*']
   pull_request:
+
+# Sparkle version embedded in the mac bundle + used by the release job's
+# generate_appcast. Keep the two jobs on the same version.
+env:
+  SPARKLE_VERSION: 2.9.4
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
       - name: dotnet build (Core)
@@ -39,7 +45,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
 
@@ -64,6 +70,18 @@ jobs:
           cp src/NeverAway.Mac/Info.plist $APP/Contents/Info.plist
           cp publish/mac-binary/neveraway $APP/Contents/MacOS/neveraway
           chmod +x $APP/Contents/MacOS/neveraway
+
+          # Embed Sparkle.framework for auto-updates (Program.cs dlopens
+          # Contents/Frameworks/Sparkle.framework/Sparkle at launch).
+          curl -sL -o "$RUNNER_TEMP/sparkle.tar.xz" \
+            "https://github.com/sparkle-project/Sparkle/releases/download/$SPARKLE_VERSION/Sparkle-$SPARKLE_VERSION.tar.xz"
+          mkdir -p "$RUNNER_TEMP/sparkle"
+          tar -xJf "$RUNNER_TEMP/sparkle.tar.xz" -C "$RUNNER_TEMP/sparkle"
+          mkdir -p $APP/Contents/Frameworks
+          cp -R "$RUNNER_TEMP/sparkle/Sparkle.framework" $APP/Contents/Frameworks/
+          # Sparkle's XPC services are only needed by sandboxed hosts;
+          # NeverAway isn't sandboxed. Removing them simplifies signing.
+          rm -rf $APP/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices
 
           if [ -n "$CERT_P12_B64" ]; then
             echo "::group::Developer ID signing path"
@@ -92,11 +110,19 @@ jobs:
               exit 1
             fi
             echo "signing with identity: $IDENTITY"
+            # Sign nested Sparkle pieces first (inside-out). No --deep on
+            # the final app sign: --deep would re-sign nested code with the
+            # app's entitlements, and Sparkle's helpers must NOT carry the
+            # .NET JIT entitlements.
+            FW=$APP/Contents/Frameworks/Sparkle.framework
+            codesign --force --options runtime --timestamp --sign "$IDENTITY" "$FW/Versions/B/Autoupdate"
+            codesign --force --options runtime --timestamp --sign "$IDENTITY" "$FW/Versions/B/Updater.app"
+            codesign --force --options runtime --timestamp --sign "$IDENTITY" "$FW"
             # --entitlements: required for the .NET runtime to function under
             # hardened runtime. Without allow-jit + allow-unsigned-executable-
             # memory + disable-library-validation, CoreCLR can't initialize
             # and the app fails on launch with HRESULT 0x80070008.
-            codesign --force --deep --options runtime --timestamp \
+            codesign --force --options runtime --timestamp \
               --entitlements src/NeverAway.Mac/Entitlements.plist \
               --sign "$IDENTITY" "$APP"
             echo "::endgroup::"
@@ -142,16 +168,30 @@ jobs:
 
           rm "$ZIP"
 
+      # ditto preserves executable bits, symlinks, and the stapled ticket --
+      # actions/upload-artifact's own zipping strips the exec bit, which
+      # breaks a downloaded .app. This zip is also what ships in releases
+      # and what generate_appcast signs for Sparkle.
+      - name: ditto-zip app bundle
+        run: |
+          VER=$(defaults read "$PWD/publish/mac-app/NeverAway.app/Contents/Info.plist" CFBundleShortVersionString)
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent publish/mac-app/NeverAway.app "publish/NeverAway-$VER.zip"
+
       - uses: actions/upload-artifact@v7
         with:
           name: neveraway-mac-app
           path: publish/mac-app/
 
+      - uses: actions/upload-artifact@v7
+        with:
+          name: neveraway-mac-zip
+          path: publish/NeverAway-*.zip
+
   build-windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
       - name: dotnet build (Windows tray)
@@ -165,3 +205,57 @@ jobs:
         with:
           name: neveraway-win-x64
           path: publish/win-x64/
+
+  # Tag push (v*) -> GitHub release with the mac zip, windows zip, and a
+  # Sparkle appcast.xml. SUFeedURL in Info.plist points at
+  # releases/latest/download/appcast.xml, so publishing the release is
+  # what makes installed apps see the update. Tag must match the version
+  # in src/NeverAway.Mac/Info.plist (bump it before tagging).
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [test, build-mac-app, build-windows]
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: neveraway-mac-zip
+          path: appcast-dir
+      - uses: actions/download-artifact@v8
+        with:
+          name: neveraway-win-x64
+          path: win-x64
+
+      # generate_appcast scans a directory of archives, unpacks each to
+      # read Info.plist versions, and writes EdDSA signatures with the
+      # private key. Only the mac zip may be in that directory.
+      - name: generate Sparkle appcast
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          curl -sL -o "$RUNNER_TEMP/sparkle.tar.xz" \
+            "https://github.com/sparkle-project/Sparkle/releases/download/$SPARKLE_VERSION/Sparkle-$SPARKLE_VERSION.tar.xz"
+          mkdir -p "$RUNNER_TEMP/sparkle"
+          tar -xJf "$RUNNER_TEMP/sparkle.tar.xz" -C "$RUNNER_TEMP/sparkle"
+
+          printf '%s' "$SPARKLE_ED_PRIVATE_KEY" > "$RUNNER_TEMP/ed_key"
+          "$RUNNER_TEMP/sparkle/bin/generate_appcast" \
+            --ed-key-file "$RUNNER_TEMP/ed_key" \
+            --download-url-prefix "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/" \
+            -o appcast-dir/appcast.xml \
+            appcast-dir
+          rm "$RUNNER_TEMP/ed_key"
+          cat appcast-dir/appcast.xml
+
+      - name: zip windows build
+        run: /usr/bin/ditto -c -k win-x64 "appcast-dir/NeverAway-win-x64.zip"
+
+      - name: create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" appcast-dir/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "NeverAway $GITHUB_REF_NAME" \
+            --generate-notes

@@ -31,7 +31,9 @@ How to run
        Auto-off at 6:00 PM         click to arm Slot 2 (Absolute)
        Configure auto-off...       change the slot values
        Cancel scheduled auto-off   visible when a slot is armed
+       Grant Accessibility Access  visible only if permission is missing
        Start at Login              launch NeverAway when you log in
+       Check for Updates...        NeverAway also checks automatically (Sparkle)
        Quit NeverAway
 
 5. The first time NeverAway fires a tap (within ~10s of launch),
@@ -43,6 +45,22 @@ How to run
    Click "Open System Settings", flip the toggle next to
    NeverAway in the Accessibility list, then re-launch
    NeverAway. (One-time setup.)
+
+   NeverAway only auto-prompts once, ever. If permission is
+   missing later (e.g. after a signature change), the menu shows
+   "Grant Accessibility Access..." instead of nagging at launch.
+   If the System Settings toggle is ON but NeverAway still isn't
+   keeping you active, the grant is stale -- reset it once:
+
+       tccutil reset Accessibility com.royashbrook.neveraway
+
+   then re-launch and grant again.
+
+Updates
+-------
+NeverAway checks GitHub releases for updates automatically via
+Sparkle and offers to install them. You can also check manually
+with "Check for Updates..." in the menu.
 
 That's it. Quit via the menu, or it'll keep running until you
 log out / shut down. To start automatically at login, click

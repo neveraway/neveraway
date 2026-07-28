@@ -47,6 +47,8 @@ internal static class Program
     [DllImport(LibObjC, EntryPoint = "objc_msgSend")] private static extern IntPtr MsgRect(IntPtr o, IntPtr s, CGRect r);
     // runModal -- returns NSInteger (long).
     [DllImport(LibObjC, EntryPoint = "objc_msgSend")] private static extern long MsgRetL(IntPtr o, IntPtr s);
+    // initWithStartingUpdater:updaterDelegate:userDriverDelegate: -- BOOL (byte) + two ids.
+    [DllImport(LibObjC, EntryPoint = "objc_msgSend")] private static extern IntPtr MsgBPP(IntPtr o, IntPtr s, byte a, IntPtr b, IntPtr c);
 
     [StructLayout(LayoutKind.Sequential)]
     internal struct CGSize { public double Width; public double Height; }
@@ -93,9 +95,16 @@ internal static class Program
     private static IntPtr _slot2Item;
     private static IntPtr _cancelScheduleItem;
     private static IntPtr _startAtLoginItem;
+    private static IntPtr _grantAccessItem;
+    private static IntPtr _updaterController;
     private static IntPtr _actionTarget;
     private static MacInputSimulator? _sim;
     private static readonly AutoOffSchedule _schedule = new();
+
+    // First-ever-launch marker for the Accessibility auto-prompt.
+    private static string AxPromptMarkerPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+        "Library", "Application Support", "NeverAway", "ax-prompted");
 
     // Match the Windows tray's deliberate icon choice:
     //   active   = SystemIcons.Error (red alert)        -> "no entry" ⛔
@@ -284,6 +293,29 @@ internal static class Program
         Toggle(isAuto: false);
     }
 
+    // Deep-link straight to the Accessibility pane of System Settings.
+    // Used by the "Grant Accessibility Access..." menu item -- the OS-level
+    // prompt (AXIsProcessTrustedWithOptions) only fires reliably once, so
+    // manual re-grant goes through the Settings pane instead.
+    [UnmanagedCallersOnly]
+    private static void OnGrantAccessPressed(IntPtr self, IntPtr cmd)
+    {
+        var url = Msg(Cls("NSURL"), Sel("URLWithString:"),
+            NSString("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"));
+        var workspace = Msg(Cls("NSWorkspace"), Sel("sharedWorkspace"));
+        MsgRetB(workspace, Sel("openURL:"), url);
+    }
+
+    // NSMenu delegate -- refresh dynamic item state right before the menu
+    // shows, so Grant-Accessibility visibility and Start-at-Login state are
+    // current even when nothing else triggered a refresh.
+    [UnmanagedCallersOnly]
+    private static void OnMenuWillOpen(IntPtr self, IntPtr cmd, IntPtr menu)
+    {
+        RefreshGrantAccessMenu();
+        RefreshStartAtLoginMenu();
+    }
+
     [UnmanagedCallersOnly]
     private static void OnQuitPressed(IntPtr self, IntPtr cmd)
     {
@@ -305,30 +337,30 @@ internal static class Program
         dlopen(ServiceManagementPath, RTLD_NOW); // Optional: SMAppService exists on macOS 13+.
 
         // Trigger the macOS Accessibility permission prompt at startup --
-        // but only if we're actually untrusted. The naive single-call
-        // AXIsProcessTrustedWithOptions(prompt:YES) approach fires the
-        // prompt on every launch for ad-hoc-signed bundles even when
-        // System Settings shows the toggle as already on (Apple API
-        // quirk or trust-DB race on first launch). Two-step: check
-        // without prompting first; only prompt if the silent check
-        // returns false. Avoids the every-launch prompt UX while still
-        // surfacing the dialog on truly-first-grant.
-        if (!AXIsProcessTrusted())
+        // but only on the very first launch ever (marker file). The
+        // AXIsProcessTrusted() gate alone is not enough: a stale TCC grant
+        // (recorded against an older build's code signature) leaves the
+        // System Settings toggle ON while the trust check returns false,
+        // which made the prompt fire on every launch forever. Prompt once;
+        // after that, an untrusted state surfaces as a
+        // "Grant Accessibility Access..." menu item instead of a nag dialog.
+        if (!AXIsProcessTrusted() && !File.Exists(AxPromptMarkerPath))
         {
+            Directory.CreateDirectory(Path.GetDirectoryName(AxPromptMarkerPath)!);
+            File.WriteAllText(AxPromptMarkerPath, "");
             var promptKey = NSString("AXTrustedCheckOptionPrompt");
             var trueVal = MsgB(Cls("NSNumber"), Sel("numberWithBool:"), 1);
             var promptOptions = Msg(Cls("NSDictionary"), Sel("dictionaryWithObject:forKey:"), trueVal, promptKey);
             AXIsProcessTrustedWithOptions(promptOptions);
             // Return value intentionally ignored. If user grants, future taps
-            // work. If user dismisses, taps silently fail until they re-launch
-            // and grant.
+            // work. If user dismisses, the menu item remains as the way back in.
         }
 
         // Custom NSObject subclass to host the menu-action callbacks.
         // The Objective-C runtime needs a real class with selectors --
         // can't dispatch [target action:] to a raw function pointer.
         var actionClass = objc_allocateClassPair(Cls("NSObject"), "NeverAwayActionTarget", 0);
-        IntPtr togglePtr, quitPtr, slot1Ptr, slot2Ptr, cancelPtr, startAtLoginPtr, configPtr, autoOffPtr, wakePtr;
+        IntPtr togglePtr, quitPtr, slot1Ptr, slot2Ptr, cancelPtr, startAtLoginPtr, configPtr, autoOffPtr, wakePtr, grantAccessPtr, menuWillOpenPtr;
         unsafe
         {
             togglePtr       = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OnTogglePressed;
@@ -340,6 +372,8 @@ internal static class Program
             configPtr       = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OnConfigurePressed;
             autoOffPtr      = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OnAutoOffFired;
             wakePtr         = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, IntPtr, void>)&OnWakeOrUnlock;
+            grantAccessPtr  = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, void>)&OnGrantAccessPressed;
+            menuWillOpenPtr = (IntPtr)(delegate* unmanaged<IntPtr, IntPtr, IntPtr, void>)&OnMenuWillOpen;
         }
         // type encoding "v@:@" = void return, self (id), cmd (SEL), one id arg
         // wake selector takes (id)notification, hence the same v@:@ signature.
@@ -352,6 +386,8 @@ internal static class Program
         class_addMethod(actionClass, Sel("configure:"),     configPtr,       "v@:@");
         class_addMethod(actionClass, Sel("autoOff:"),       autoOffPtr,      "v@:@");
         class_addMethod(actionClass, Sel("wakeOrUnlock:"),  wakePtr,         "v@:@");
+        class_addMethod(actionClass, Sel("grantAccess:"),   grantAccessPtr,  "v@:@");
+        class_addMethod(actionClass, Sel("menuWillOpen:"),  menuWillOpenPtr, "v@:@");
         objc_registerClassPair(actionClass);
         _actionTarget = Msg(Msg(actionClass, Sel("alloc")), Sel("init"));
         var actionTarget = _actionTarget;
@@ -359,6 +395,26 @@ internal static class Program
         // NSApplication.sharedApplication, set as Accessory (menu-bar only)
         var app = Msg(Cls("NSApplication"), Sel("sharedApplication"));
         MsgVL(app, Sel("setActivationPolicy:"), 1L); // NSApplicationActivationPolicyAccessory
+
+        // Sparkle auto-updates. Only present when running from the
+        // assembled .app bundle (CI embeds Sparkle.framework in
+        // Contents/Frameworks). Bare `dotnet run` / dev binaries skip it.
+        var sparkleBin = Path.Combine(
+            Path.GetDirectoryName(Environment.ProcessPath) ?? "",
+            "..", "Frameworks", "Sparkle.framework", "Sparkle");
+        if (File.Exists(sparkleBin) && dlopen(sparkleBin, RTLD_NOW) != IntPtr.Zero)
+        {
+            var updaterCls = Cls("SPUStandardUpdaterController");
+            if (updaterCls != IntPtr.Zero)
+            {
+                // startingUpdater:YES starts the scheduled-check timer on
+                // the runloop; SUEnableAutomaticChecks in Info.plist skips
+                // Sparkle's "check automatically?" first-run dialog.
+                _updaterController = MsgBPP(Msg(updaterCls, Sel("alloc")),
+                    Sel("initWithStartingUpdater:updaterDelegate:userDriverDelegate:"),
+                    1, IntPtr.Zero, IntPtr.Zero);
+            }
+        }
 
         // Status item with variable length, icon as title (see IconActive/IconInactive)
         var statusBar = Msg(Cls("NSStatusBar"), Sel("systemStatusBar"));
@@ -406,11 +462,28 @@ internal static class Program
 
         Msg(menu, Sel("addItem:"), Msg(Cls("NSMenuItem"), Sel("separatorItem")));
 
+        // Hidden while trusted; surfaces only when Accessibility is missing
+        // (fresh install, or a TCC grant gone stale after a signature change).
+        _grantAccessItem = Msg(Msg(Cls("NSMenuItem"), Sel("alloc")), Sel("init"));
+        Msg(_grantAccessItem, Sel("setTitle:"), NSString("Grant Accessibility Access..."));
+        Msg(_grantAccessItem, Sel("setAction:"), Sel("grantAccess:"));
+        Msg(_grantAccessItem, Sel("setTarget:"), actionTarget);
+        Msg(menu, Sel("addItem:"), _grantAccessItem);
+
         _startAtLoginItem = Msg(Msg(Cls("NSMenuItem"), Sel("alloc")), Sel("init"));
         Msg(_startAtLoginItem, Sel("setTitle:"), NSString("Start at Login"));
         Msg(_startAtLoginItem, Sel("setAction:"), Sel("startAtLogin:"));
         Msg(_startAtLoginItem, Sel("setTarget:"), actionTarget);
         Msg(menu, Sel("addItem:"), _startAtLoginItem);
+
+        if (_updaterController != IntPtr.Zero)
+        {
+            var updateItem = Msg(Msg(Cls("NSMenuItem"), Sel("alloc")), Sel("init"));
+            Msg(updateItem, Sel("setTitle:"), NSString("Check for Updates..."));
+            Msg(updateItem, Sel("setAction:"), Sel("checkForUpdates:"));
+            Msg(updateItem, Sel("setTarget:"), _updaterController);
+            Msg(menu, Sel("addItem:"), updateItem);
+        }
 
         Msg(menu, Sel("addItem:"), Msg(Cls("NSMenuItem"), Sel("separatorItem")));
 
@@ -419,6 +492,9 @@ internal static class Program
         Msg(quitItem, Sel("setAction:"), Sel("quit:"));
         Msg(quitItem, Sel("setTarget:"), actionTarget);
         Msg(menu, Sel("addItem:"), quitItem);
+
+        // Delegate so menuWillOpen: refreshes dynamic item state on open.
+        Msg(menu, Sel("setDelegate:"), actionTarget);
 
         Msg(_statusItem, Sel("setMenu:"), menu);
 
@@ -502,6 +578,13 @@ internal static class Program
         }
         UpdateTooltip();
         RefreshStartAtLoginMenu();
+        RefreshGrantAccessMenu();
+    }
+
+    private static void RefreshGrantAccessMenu()
+    {
+        if (_grantAccessItem == IntPtr.Zero) return;
+        MsgB(_grantAccessItem, Sel("setHidden:"), AXIsProcessTrusted() ? (byte)1 : (byte)0);
     }
 
     private static void UpdateTooltip()
