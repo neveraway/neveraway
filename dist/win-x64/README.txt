@@ -9,6 +9,12 @@ keyboard, so you won't see or feel anything.
 
 How to run
 ----------
+0. Or skip the zip entirely -- one-line install/upgrade from
+   PowerShell (installs to %LOCALAPPDATA%\NeverAway, makes a
+   Start Menu shortcut, no SmartScreen warning):
+
+       irm https://raw.githubusercontent.com/neveraway/neveraway/master/scripts/install.ps1 | iex
+
 1. Double-click neveraway.exe.
 
    Windows SmartScreen may warn ("Windows protected your PC")

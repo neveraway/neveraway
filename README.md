@@ -101,7 +101,19 @@ dotnet publish src/NeverAway.Mac -c Release -r osx-arm64
 # wrap in NeverAway.app/Contents/MacOS/, see .github/workflows/ci.yml for the bundle layout
 ```
 
-### Run / publish on Windows
+### Run on Windows
+
+**One-line install / upgrade** — [`scripts/install.ps1`](scripts/install.ps1) resolves the latest release, installs to `%LOCALAPPDATA%\NeverAway` (no admin), stops a running copy first when upgrading, strips mark-of-the-web so SmartScreen doesn't warn, creates a Start Menu shortcut, and launches:
+
+```powershell
+irm https://raw.githubusercontent.com/neveraway/neveraway/master/scripts/install.ps1 | iex
+```
+
+To start at login: Win+R → `shell:startup` → copy the NeverAway shortcut in.
+
+Manual: grab `NeverAway-win-x64.zip` from the [latest release](https://github.com/neveraway/neveraway/releases/latest), extract anywhere, run `neveraway.exe`. SmartScreen may warn ("Windows protected your PC") because the exe isn't code-signed — More info → Run anyway.
+
+Build locally:
 
 ```powershell
 dotnet publish src/NeverAway.Windows -c Release
