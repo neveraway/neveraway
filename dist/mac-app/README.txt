@@ -14,9 +14,13 @@ How to run
 1. Drag NeverAway.app into your /Applications folder (or run it
    from wherever you unzipped it).
 
-   Upgrading an existing install from the terminal? Don't extract
-   over the old bundle -- macOS blocks in-place modification of
-   installed apps ("Operation not permitted"). Quit NeverAway,
+   Terminal one-liner (fresh install or upgrade, latest release):
+
+       curl -fsSL https://raw.githubusercontent.com/neveraway/neveraway/master/scripts/install.sh | bash
+
+   Upgrading by hand instead? Don't extract over the old bundle --
+   macOS blocks in-place modification of installed apps
+   ("Operation not permitted"). Quit NeverAway,
    `mv /Applications/NeverAway.app /tmp/`, then extract. Finder
    drag-and-replace is fine.
 
