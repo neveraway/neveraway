@@ -37,23 +37,22 @@ Mac v3.1.0 also matches the Windows tray's full feature set: two-slot auto-off s
 
 Download `NeverAway.app` from the latest release (or build it locally — see below), drag it into `/Applications`, double-click. A ⛔ glyph appears in the menu bar. Click for Pause / Quit menu (⛔ flips to 🛡 when paused).
 
-**First-launch gatekeeper bypass.** NeverAway is ad-hoc signed but not signed with an Apple Developer ID, so on first launch macOS blocks it with "could not be verified" or "is damaged". Right-click → Open used to bypass this; it doesn't work on modern macOS (Sonoma / Sequoia / later). Either:
+**Gatekeeper.** Since v3.1.1 releases are signed with an Apple Developer ID and notarized, so macOS accepts the .app on first launch with no "could not be verified" warning. (Builds from CI artifacts on non-release branches may be ad-hoc signed; for those, `xattr -dr com.apple.quarantine /path/to/NeverAway.app` before first launch.)
 
-- **Mouse-only:** try to open → blocked → System Settings → Privacy & Security → scroll to "Security" → "Open Anyway" button next to "NeverAway was blocked..." → confirm → double-click works
-- **Terminal:** `xattr -dr com.apple.quarantine /path/to/NeverAway.app` then double-click
+**Accessibility prompt** fires once on first-ever launch: "NeverAway wants to control your computer using accessibility features." → Open System Settings → flip the toggle next to NeverAway in the Accessibility list → re-launch NeverAway. NeverAway never auto-prompts again after that; if the permission is missing later (fresh machine, signature change), the menu shows **Grant Accessibility Access...** instead. If the Settings toggle shows ON but Teams still marks you Away, the TCC grant is stale — `tccutil reset Accessibility com.royashbrook.neveraway`, re-launch, grant once.
 
-Either is one-time. After first successful launch, macOS remembers the decision.
+**Updates.** The app checks GitHub releases via [Sparkle](https://sparkle-project.org/) and offers to install new versions automatically; **Check for Updates...** in the menu does it on demand.
 
-**Accessibility prompt** on first Tap (~10s after launch): "NeverAway wants to control your computer using accessibility features." → Open System Settings → flip the toggle next to NeverAway in the Accessibility list → re-launch NeverAway.
-
-**Menu** (Mac v3.1.0):
+**Menu** (Mac v3.2.0):
 
 - **Pause / Resume** — toggle keep-awake (click ⛔, flips to 🛡 when paused)
 - **Auto-off in 2 hours** (Slot 1, Duration) — click to cycle Off ↔ Once
 - **Auto-off at 6:00 PM** (Slot 2, Absolute) — click to cycle Off → Once → Daily → Off
 - **Configure auto-off...** — opens a dialog to change slot values (minutes for Slot 1, HH:MM for Slot 2)
 - **Cancel scheduled auto-off** — appears when a slot is armed; cancels it
+- **Grant Accessibility Access...** — only visible when the permission is missing; deep-links to the Settings pane
 - **Start at Login** — launches NeverAway automatically after you log in (macOS 13+)
+- **Check for Updates...** — manual Sparkle update check (only present when running from the .app bundle)
 - **Quit NeverAway**
 
 Auto-on: when the schedule fires (auto-off), unlocking the screen or waking the laptop re-arms NeverAway. Manual-off (clicking Pause) does *not* auto-re-arm — Resume is on you.
