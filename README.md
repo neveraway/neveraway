@@ -37,6 +37,18 @@ Mac v3.1.0 also matches the Windows tray's full feature set: two-slot auto-off s
 
 Download `NeverAway.app` from the latest release (or build it locally — see below), drag it into `/Applications`, double-click. A ⛔ glyph appears in the menu bar. Click for Pause / Quit menu (⛔ flips to 🛡 when paused).
 
+**Install / upgrade from the terminal.** Do *not* extract the zip on top of an existing `/Applications/NeverAway.app` — macOS App Management blocks in-place modification of installed app bundles, so `ditto` fails with a wall of "Operation not permitted". (Finder drag-and-replace is exempt; this only bites terminal installs.) Quit the app and move the old bundle out of the way first, then extract:
+
+```bash
+pkill -f 'NeverAway.app/Contents/MacOS/neveraway' 2>/dev/null
+curl -sLo /tmp/NeverAway.zip https://github.com/neveraway/neveraway/releases/download/vX.Y.Z/NeverAway-X.Y.Z.zip
+mv /Applications/NeverAway.app /tmp/NeverAway-old.app 2>/dev/null
+ditto -x -k /tmp/NeverAway.zip /Applications/
+open /Applications/NeverAway.app
+```
+
+(Substitute the version, e.g. `v3.2.0` / `3.2.0` — asset names are versioned, so there's no `latest` URL for the zip. With the [gh CLI](https://cli.github.com/): `gh release download --repo neveraway/neveraway --pattern 'NeverAway-[0-9]*.zip'` grabs the latest without knowing the number.) Since v3.2.0 the app updates itself via Sparkle, so the terminal path is mostly a first-install or recovery tool.
+
 **Gatekeeper.** Since v3.1.1 releases are signed with an Apple Developer ID and notarized, so macOS accepts the .app on first launch with no "could not be verified" warning. (Builds from CI artifacts on non-release branches may be ad-hoc signed; for those, `xattr -dr com.apple.quarantine /path/to/NeverAway.app` before first launch.)
 
 **Accessibility prompt** fires once on first-ever launch: "NeverAway wants to control your computer using accessibility features." → Open System Settings → flip the toggle next to NeverAway in the Accessibility list → re-launch NeverAway. NeverAway never auto-prompts again after that; if the permission is missing later (fresh machine, signature change), the menu shows **Grant Accessibility Access...** instead. If the Settings toggle shows ON but Teams still marks you Away, the TCC grant is stale — `tccutil reset Accessibility com.royashbrook.neveraway`, re-launch, grant once.
