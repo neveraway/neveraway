@@ -37,6 +37,14 @@ Mac v3.1.0 also matches the Windows tray's full feature set: two-slot auto-off s
 
 Download `NeverAway.app` from the latest release (or build it locally — see below), drag it into `/Applications`, double-click. A ⛔ glyph appears in the menu bar. Click for Pause / Quit menu (⛔ flips to 🛡 when paused).
 
+**Homebrew:**
+
+```bash
+brew install --cask neveraway/tap/neveraway
+```
+
+Cask lives in [neveraway/homebrew-tap](https://github.com/neveraway/homebrew-tap) and self-bumps within ~6h of a release. Already installed the app by hand? `brew install --cask --adopt neveraway/tap/neveraway` takes over the existing copy instead of re-downloading. `auto_updates true` is set, so `brew upgrade` stays out of Sparkle's way.
+
 **Terminal install / upgrade, one line** — [`scripts/install.sh`](scripts/install.sh) resolves the latest release, downloads, and installs. It handles both cases: fresh install just extracts; upgrade quits the running app and moves the old bundle aside first (extracting over an installed bundle trips macOS App Management with "Operation not permitted" — Finder drag-and-replace is exempt, terminal extracts are not):
 
 ```bash
