@@ -67,6 +67,7 @@ const cmd = path.basename(process.argv[1]);
 const args = process.argv.slice(2);
 fs.appendFileSync(process.env.LOG, cmd + '\\n');
 if (process.env.FAIL === cmd) process.exit(1);
+if (cmd === 'codesign' && !args[args.indexOf('-R') + 1]?.startsWith('=anchor apple')) process.exit(2);
 if (cmd === 'uname') console.log(args[0] === '-s' ? 'Darwin' : 'arm64');
 if (cmd === 'curl') {
   if (args.includes('-o')) fs.writeFileSync(args[args.indexOf('-o') + 1], 'zip fixture');

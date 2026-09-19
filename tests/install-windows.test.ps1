@@ -67,7 +67,10 @@ try {
         $old = Join-Path $installed 'old.txt'
         Set-Content -LiteralPath $old -Value 'keep the old version'
         $failed = $false
-        try { & ([scriptblock]::Create($source)) } catch { $failed = $true }
+        try { & ([scriptblock]::Create($source)) } catch {
+            if ($scenario -eq 'valid') { throw }
+            $failed = $true
+        }
         if ($scenario -eq 'valid') {
             if ($failed -or $script:started -ne 1 -or $script:shortcuts -ne 1 -or (Test-Path -LiteralPath $old)) { throw 'valid install failed' }
             $zone = Get-Content -LiteralPath (Join-Path $installed 'neveraway.exe') -Stream Zone.Identifier

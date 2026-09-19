@@ -30,7 +30,7 @@ READY="$TMP/extracted/NeverAway.app"
 [ -d "$READY" ] && [ ! -L "$READY" ] || { echo "error: missing app bundle" >&2; exit 1; }
 REQUIREMENT='anchor apple generic and identifier "com.royashbrook.neveraway" and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = "44Y2L8A2CV"'
 verify_app() {
-  codesign --verify --deep --strict --verbose=2 -R "$REQUIREMENT" "$1"
+  codesign --verify --deep --strict --verbose=2 -R "=$REQUIREMENT" "$1"
   spctl --assess --type execute --verbose=2 "$1"
   xcrun stapler validate "$1"
 }
