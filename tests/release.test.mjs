@@ -50,7 +50,7 @@ test('Windows signer authenticates the exact bytes and refuses a different priva
 });
 
 test('mac installer authenticates before stopping or replacing, and rolls back failed replacement', () => {
-  for (const failure of ['', 'codesign', 'spctl', 'xcrun', 'move']) {
+  for (const failure of ['', 'codesign', 'spctl', 'move']) {
     const dir = mkdtempSync(join(tmpdir(), 'neveraway-install-'));
     const bin = join(dir, 'bin');
     const applications = join(dir, 'Applications');
@@ -96,7 +96,8 @@ if (cmd === 'mv') {
     } else {
       assert.equal(result.status, 0, result.stderr);
       assert.equal(readFileSync(join(applications, 'NeverAway.app', 'new'), 'utf8'), 'verified fixture');
-      assert(calls.indexOf('xcrun') < calls.indexOf('pkill'));
+      assert(calls.indexOf('spctl') < calls.indexOf('pkill'));
+      assert.equal(calls.includes('xcrun'), false);
       assert(calls.includes('open'));
     }
   }

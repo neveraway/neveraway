@@ -32,7 +32,6 @@ REQUIREMENT='anchor apple generic and identifier "com.royashbrook.neveraway" and
 verify_app() {
   codesign --verify --deep --strict --verbose=2 -R "=$REQUIREMENT" "$1"
   spctl --assess --type execute --verbose=2 "$1"
-  xcrun stapler validate "$1"
 }
 verify_app "$READY"
 
