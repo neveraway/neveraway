@@ -13,7 +13,7 @@
     <AssemblyName>neveraway</AssemblyName>
     <ProductName>NeverAway</ProductName>
     <PublisherName>Roy Ashbrook</PublisherName>
-    <ApplicationVersion>3.0.0.0</ApplicationVersion>
+    <ApplicationVersion>3.2.1.0</ApplicationVersion>
     <!-- Single-file publish for the Windows tray binary (preserves       -->
     <!-- the v2 install model: download .exe, double-click, runs in tray) -->
     <PublishSingleFile>true</PublishSingleFile>

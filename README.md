@@ -45,30 +45,10 @@ brew install --cask neveraway/tap/neveraway
 
 Cask lives in [neveraway/homebrew-tap](https://github.com/neveraway/homebrew-tap) and self-bumps within ~6h of a release. Already installed the app by hand? `brew install --cask --adopt neveraway/tap/neveraway` takes over the existing copy instead of re-downloading. `auto_updates true` is set, so `brew upgrade` stays out of Sparkle's way.
 
-**Terminal install / upgrade, one line** — [`scripts/install.sh`](scripts/install.sh) resolves the latest release, downloads, and installs. It handles both cases: fresh install just extracts; upgrade quits the running app and moves the old bundle aside first (extracting over an installed bundle trips macOS App Management with "Operation not permitted" — Finder drag-and-replace is exempt, terminal extracts are not):
+**Terminal install / upgrade, one line** — [`scripts/install.sh`](scripts/install.sh) resolves the latest release, stages the archive, and verifies its Apple Developer ID (team `44Y2L8A2CV`), app identity, and notarization before stopping or replacing an installed copy. A failed replacement restores the old bundle.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/neveraway/neveraway/master/scripts/install.sh | bash
-```
-
-Manual equivalents (current version shown; check [releases](https://github.com/neveraway/neveraway/releases) for the latest number):
-
-*New install:*
-
-```bash
-curl -sLo /tmp/NeverAway.zip https://github.com/neveraway/neveraway/releases/download/v3.2.0/NeverAway-3.2.0.zip
-ditto -x -k /tmp/NeverAway.zip /Applications/
-open /Applications/NeverAway.app
-```
-
-*Upgrade an existing install:*
-
-```bash
-pkill -f 'NeverAway.app/Contents/MacOS/neveraway'
-curl -sLo /tmp/NeverAway.zip https://github.com/neveraway/neveraway/releases/download/v3.2.0/NeverAway-3.2.0.zip
-mv /Applications/NeverAway.app /tmp/NeverAway-old.app
-ditto -x -k /tmp/NeverAway.zip /Applications/
-open /Applications/NeverAway.app
 ```
 
 Since v3.2.0 the app updates itself via Sparkle, so the terminal path is mostly a first-install or recovery tool.
@@ -103,13 +83,15 @@ dotnet publish src/NeverAway.Mac -c Release -r osx-arm64
 
 ### Run on Windows
 
-**One-line install / upgrade** — [`scripts/install.ps1`](scripts/install.ps1) resolves the latest release, installs to `%LOCALAPPDATA%\NeverAway` (no admin), stops a running copy first when upgrading, strips mark-of-the-web so SmartScreen doesn't warn, creates a Start Menu shortcut, and launches:
+**One-line install / upgrade** — [`scripts/install.ps1`](scripts/install.ps1) requires Windows PowerShell 5.1 with .NET Framework 4.8, or PowerShell 7. It verifies the exact zip using the embedded RSA-3072 public key before extracting or stopping a running copy. It installs to `%LOCALAPPDATA%\NeverAway` (no admin), preserves downloaded-file warnings, creates a Start Menu shortcut, and launches. A failed replacement restores the old installation:
 
 ```powershell
 irm https://raw.githubusercontent.com/neveraway/neveraway/master/scripts/install.ps1 | iex
 ```
 
 To start at login: Win+R → `shell:startup` → copy the NeverAway shortcut in.
+
+Signed archives are available starting with v3.2.1. The installer rejects older unsigned releases. This archive signature authenticates the download; it is not an Authenticode signature for the executable.
 
 Manual: grab `NeverAway-win-x64.zip` from the [latest release](https://github.com/neveraway/neveraway/releases/latest), extract anywhere, run `neveraway.exe`. SmartScreen may warn ("Windows protected your PC") because the exe isn't code-signed — More info → Run anyway.
 
@@ -150,7 +132,12 @@ while true;do osascript -e 'tell application "System Events" to key code 80';sle
 
 ```bash
 dotnet test tests/NeverAway.Core.Tests
+node --test tests/release.test.mjs
 ```
+
+Windows installer checks run in Windows PowerShell with `./tests/install-windows.test.ps1`. They cover valid installation, changed archive/signature, wrong key, missing signature, and replacement rollback. No fixture executable is launched.
+
+Release tags require all Apple signing/notarization credentials. Both uses of Sparkle download the same pinned, checksum-verified archive before any release secret is exposed to it. The `release` GitHub environment permits only `v*` tags and holds `WINDOWS_RELEASE_KEY` (Base64 PKCS#8 DER). The corresponding public key is committed in `scripts/windows-release-public.pem` and embedded in the standalone installer. Key rotation updates both public representations and the environment secret together.
 
 ## Why does this exist?
 

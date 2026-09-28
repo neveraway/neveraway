@@ -4,10 +4,8 @@
 #   curl -fsSL https://raw.githubusercontent.com/neveraway/neveraway/master/scripts/install.sh | bash
 #
 # Resolves the latest GitHub release, downloads the notarized .app zip,
-# and installs it to /Applications. If a copy is already installed it is
-# quit and moved aside first: extracting over an installed bundle trips
-# macOS App Management ("Operation not permitted"), so never unzip in
-# place. The old bundle is restored if the install fails.
+# and verifies its Developer ID and notarization before replacing anything.
+# Moving a staged bundle avoids extracting over a live app (App Management).
 set -euo pipefail
 
 REPO="neveraway/neveraway"
@@ -27,20 +25,40 @@ TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 curl -fsSL -o "$TMP/NeverAway.zip" "$URL"
 
-OLD=""
+ditto -x -k "$TMP/NeverAway.zip" "$TMP/extracted"
+READY="$TMP/extracted/NeverAway.app"
+[ -d "$READY" ] && [ ! -L "$READY" ] || { echo "error: missing app bundle" >&2; exit 1; }
+REQUIREMENT='anchor apple generic and identifier "com.royashbrook.neveraway" and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = "44Y2L8A2CV"'
+verify_app() {
+  codesign --verify --deep --strict --verbose=2 -R "=$REQUIREMENT" "$1"
+  spctl --assess --type execute --verbose=2 "$1"
+}
+verify_app "$READY"
+
+STAGE=$(mktemp -d /Applications/.neveraway.XXXXXX)
+OLD="$STAGE/previous.app"
+INSTALLED=0
+cleanup() {
+  if [ "$INSTALLED" = 0 ] && [ -d "$OLD" ] && [ ! -e "$APP" ]; then
+    mv "$OLD" "$APP" || echo "error: restore the previous install from $OLD" >&2
+  fi
+  if [ "$INSTALLED" = 1 ] || [ ! -e "$OLD" ]; then
+    rm -rf "$STAGE"
+  else
+    echo "previous installation retained at $OLD" >&2
+  fi
+  rm -rf "$TMP"
+}
+trap cleanup EXIT
+ditto "$READY" "$STAGE/NeverAway.app"
+verify_app "$STAGE/NeverAway.app"
 if [ -d "$APP" ]; then
-  echo "existing install found -- quitting and moving it aside"
   pkill -f 'NeverAway.app/Contents/MacOS/neveraway' 2>/dev/null || true
   sleep 1
-  OLD="$TMP/NeverAway-old.app"
   mv "$APP" "$OLD"
 fi
-
-if ! ditto -x -k "$TMP/NeverAway.zip" /Applications/; then
-  echo "error: extract failed" >&2
-  [ -n "$OLD" ] && mv "$OLD" "$APP" && echo "old version restored" >&2
-  exit 1
-fi
+mv "$STAGE/NeverAway.app" "$APP"
+INSTALLED=1
 
 open "$APP"
 echo "NeverAway installed: look for the no-entry glyph in the menu bar."

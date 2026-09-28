@@ -10,19 +10,19 @@ on:
     tags: ['v*']
   pull_request:
 
-# Sparkle version embedded in the mac bundle + used by the release job's
-# generate_appcast. Keep the two jobs on the same version.
-env:
-  SPARKLE_VERSION: 2.9.4
+permissions:
+  contents: read
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
           dotnet-version: '10.0.x'
+      - name: release boundary tests
+        run: node --test tests/release.test.mjs
       - name: dotnet build (Core)
         run: dotnet build src/NeverAway.Core/NeverAway.Core.csproj -c Release
       - name: dotnet test
@@ -34,8 +34,8 @@ jobs:
   # the .app on first launch without any "could not be verified"
   # warning.
   #
-  # Requires 5 repo secrets to be set; without them, the workflow falls
-  # back to ad-hoc signing (current behavior, gatekeeper warns):
+  # Tagged releases require all five credentials. Development artifacts
+  # remain ad-hoc signed and cannot pass the release installer:
   #   APPLE_DEV_ID_CERT_P12          -- base64 of the Developer ID Application .p12
   #   APPLE_DEV_ID_CERT_PWD          -- the .p12's password
   #   APPLE_ID                       -- Apple ID email (for notarytool)
@@ -44,24 +44,29 @@ jobs:
   build-mac-app:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
           dotnet-version: '10.0.x'
 
+      - name: require release signing credentials
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          CERT_P12_B64: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.APPLE_DEV_ID_CERT_P12 || '' }}
+          CERT_PWD: ${{ secrets.APPLE_DEV_ID_CERT_PWD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: bash scripts/check-release-credentials.sh
+      - name: download verified Sparkle
+        run: bash scripts/download-sparkle.sh
       - name: dotnet publish (NeverAway.Mac, osx-arm64 single-file)
         run: dotnet publish src/NeverAway.Mac/NeverAway.Mac.csproj -c Release -o publish/mac-binary
 
-      # Assemble bundle + codesign. Two paths gated on whether the
-      # APPLE_DEV_ID_CERT_P12 secret is set:
-      #   - present: import cert into temp keychain, sign with Developer
-      #     ID Application + hardened runtime + secure timestamp.
-      #   - absent: ad-hoc sign (v3.0.0 / v3.1.0 behavior). Gatekeeper
-      #     warns on first launch. Set the APPLE_* secrets to enable
-      #     the Developer ID path.
+      # Release signing is required on tags; other builds use ad-hoc signing.
       - name: assemble NeverAway.app bundle + codesign
         env:
-          CERT_P12_B64: ${{ secrets.APPLE_DEV_ID_CERT_P12 }}
+          CERT_P12_B64: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.APPLE_DEV_ID_CERT_P12 || '' }}
           CERT_PWD: ${{ secrets.APPLE_DEV_ID_CERT_PWD }}
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
@@ -73,10 +78,6 @@ jobs:
 
           # Embed Sparkle.framework for auto-updates (Program.cs dlopens
           # Contents/Frameworks/Sparkle.framework/Sparkle at launch).
-          curl -sL -o "$RUNNER_TEMP/sparkle.tar.xz" \
-            "https://github.com/sparkle-project/Sparkle/releases/download/$SPARKLE_VERSION/Sparkle-$SPARKLE_VERSION.tar.xz"
-          mkdir -p "$RUNNER_TEMP/sparkle"
-          tar -xJf "$RUNNER_TEMP/sparkle.tar.xz" -C "$RUNNER_TEMP/sparkle"
           mkdir -p $APP/Contents/Frameworks
           cp -R "$RUNNER_TEMP/sparkle/Sparkle.framework" $APP/Contents/Frameworks/
           # Sparkle's XPC services are only needed by sandboxed hosts;
@@ -97,7 +98,9 @@ jobs:
             rm "$RUNNER_TEMP/cert.p12"
 
             # Add temp keychain to search list so codesign + xcrun find the cert.
-            security list-keychain -d user -s "$KC_PATH" $(security list-keychains -d user | sed s/\"//g)
+            KEYCHAINS=()
+            while IFS= read -r path; do KEYCHAINS+=("$path"); done < <(security list-keychains -d user | sed 's/^ *"//;s/"$//')
+            security list-keychains -d user -s "$KC_PATH" "${KEYCHAINS[@]}"
             # Allow codesign to use the private key without an interactive prompt.
             security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PWD" "$KC_PATH" >/dev/null
 
@@ -134,13 +137,12 @@ jobs:
           codesign --verify --strict --verbose=2 "$APP"
           cp dist/mac-app/README.txt publish/mac-app/README.txt
 
-      # Notarize + staple. Skipped (with a warning) if signing creds
-      # aren't available. Notarization typically completes in <5 min.
+      # Notarize + staple release builds. Development artifacts skip this.
       # Stapling attaches the verdict ticket to the .app so it verifies
       # offline (without contacting Apple at launch time).
       - name: notarize + staple
         env:
-          CERT_P12_B64: ${{ secrets.APPLE_DEV_ID_CERT_P12 }}
+          CERT_P12_B64: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.APPLE_DEV_ID_CERT_P12 || '' }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -177,12 +179,20 @@ jobs:
           VER=$(defaults read "$PWD/publish/mac-app/NeverAway.app/Contents/Info.plist" CFBundleShortVersionString)
           /usr/bin/ditto -c -k --sequesterRsrc --keepParent publish/mac-app/NeverAway.app "publish/NeverAway-$VER.zip"
 
-      - uses: actions/upload-artifact@v7
+      - name: verify delivered release archive
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          VER=$(defaults read "$PWD/publish/mac-app/NeverAway.app/Contents/Info.plist" CFBundleShortVersionString)
+          test "$GITHUB_REF_NAME" = "v$VER"
+          ditto -x -k "publish/NeverAway-$VER.zip" "$RUNNER_TEMP/release-check"
+          bash scripts/verify-mac-release.sh "$RUNNER_TEMP/release-check/NeverAway.app"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: neveraway-mac-app
           path: publish/mac-app/
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: neveraway-mac-zip
           path: publish/NeverAway-*.zip
@@ -190,10 +200,13 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
           dotnet-version: '10.0.x'
+      - name: Windows PowerShell installer checks
+        shell: powershell
+        run: ./tests/install-windows.test.ps1
       - name: dotnet build (Windows tray)
         run: dotnet build src/NeverAway.Windows/NeverAway.Windows.csproj -c Release
       - name: dotnet publish (Windows tray, win-x64 single-file)
@@ -201,7 +214,7 @@ jobs:
       - name: copy per-platform README into publish dir
         shell: bash
         run: cp dist/win-x64/README.txt publish/win-x64/
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: neveraway-win-x64
           path: publish/win-x64/
@@ -215,14 +228,20 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [test, build-mac-app, build-windows]
     runs-on: macos-latest
+    environment: release
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: download verified Sparkle
+        run: bash scripts/download-sparkle.sh
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: neveraway-mac-zip
           path: appcast-dir
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: neveraway-win-x64
           path: win-x64
@@ -234,11 +253,6 @@ jobs:
         env:
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
         run: |
-          curl -sL -o "$RUNNER_TEMP/sparkle.tar.xz" \
-            "https://github.com/sparkle-project/Sparkle/releases/download/$SPARKLE_VERSION/Sparkle-$SPARKLE_VERSION.tar.xz"
-          mkdir -p "$RUNNER_TEMP/sparkle"
-          tar -xJf "$RUNNER_TEMP/sparkle.tar.xz" -C "$RUNNER_TEMP/sparkle"
-
           printf '%s' "$SPARKLE_ED_PRIVATE_KEY" > "$RUNNER_TEMP/ed_key"
           "$RUNNER_TEMP/sparkle/bin/generate_appcast" \
             --ed-key-file "$RUNNER_TEMP/ed_key" \
@@ -250,6 +264,11 @@ jobs:
 
       - name: zip windows build
         run: /usr/bin/ditto -c -k win-x64 "appcast-dir/NeverAway-win-x64.zip"
+
+      - name: sign Windows archive
+        env:
+          WINDOWS_RELEASE_KEY: ${{ secrets.WINDOWS_RELEASE_KEY }}
+        run: node scripts/sign-windows-release.mjs appcast-dir/NeverAway-win-x64.zip
 
       - name: create GitHub release
         env:
