@@ -9,7 +9,7 @@ $ErrorActionPreference = 'Stop'
 
 function Assert-ReleaseSignature($Archive, $Signature) {
     $parameters = New-Object Security.Cryptography.RSAParameters
-    $parameters.Modulus = [Convert]::FromBase64String('qRfYRGm5ck6yV20hbpWZvE8meNgZgPppJQ5XQ5QUlm0d68vkeLhUhl0DtDLcnhNNQR1xHPHgHCDQUwTB3LRRyZoIrj/P9j/WP1jVyaaAhMIKNC1xv8BDdyRJRe+R0Du33DK3z2mJwcgWiN/b711iiYIwmObFA0yISBLj0La0nBf/GgN+SqmYg5PxjQ246ULjriR4gh9Dy1cwOkXfNdIMjn2UE2PO8hQYAbuYLGSc8oC/DK2GQdVUpRlqWi7aAVu8i8cMYHL/zX9LpyzpPFDIXP5cHQG+hzwkrFsfV3qgE6D2qmZktSJ2nQ7yzE4RuJmP0dj9EE+l7nzSK6MdrAEnlnBeAkA3Nyh0m1GP19rZBUuRDnLuHxAkq6igCEDzXjA4RmagXb1dgVbef8HK7A7MqKUHuJux8acMENqYHUoBOl970ZH4HUP4m68fOOuOMn8T4u87DTj4y/SmobVXkhTWC0K3PxcAWj0Vi8HsflmtjACgHF9y9LFekTs/CCq4/Nu7')
+    $parameters.Modulus = [Convert]::FromBase64String('qYlCUK8cudPN3L5jSZ3ohrvRTMWX0FXTxPs4WtGQk389WBYpBrydNmxkA8Ptfkydv3cFbGcHPVeqYmvbxgDFjtHl70aY2FgPuXxn240ARJ5LeFeib2W8TD407eLYJgjh0vlzz7atd1ldLdzLlYL33FnlM9rpbjaqQ6qekU3e1nCRuu8iQNSrYf4C8JG3+tQP46W7YU09P5ouxsgvpleIqIdc1DkWCE6gdukBRUh87FB1ExQB0scGF70lF+vRF+zZKEKbyMMSFTd5+MmG01jdkf8Z2Sy5PP5PklyX1dx/huVYdrKQwxHSpWaNpx7QJxH2onQEtnEpqY+7b4g3dpUjKGSnL/bbo7GmrKak1n5ACbq5ug6KiLcB24rYZ5LTnTYe2nzqtD2FbypELvaDICf8Xv/ANaqQ/R2hY+zviNfPnZ05LZXxmRnaTuMN8M0zFIM5xSriyvRtjBeGFhQrF/72f3XfmoCiNIViT83BW1EjIt37afmmfNBQO8xpDJ3emWhJ')
     $parameters.Exponent = [Convert]::FromBase64String('AQAB')
     $rsa = [Security.Cryptography.RSA]::Create()
     $stream = $null
